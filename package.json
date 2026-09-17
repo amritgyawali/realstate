@@ -1,0 +1,35 @@
+{
+  "name": "lre-virtual-estate",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Who's Who in Luxury Real Estate \u2014 global luxury listings with an immersive 3D/360 virtual walkover platform.",
+  "scripts": {
+    "dev": "node scripts/next.cjs dev",
+    "build": "node scripts/next.cjs build",
+    "start": "node scripts/next.cjs start",
+    "lint": "node scripts/next.cjs lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fortawesome/fontawesome-free": "^6.7.2",
+    "next": "^15.5.25",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "three": "^0.180.0",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/container-queries": "^0.1.1",
+    "@tailwindcss/forms": "^0.5.10",
+    "@types/node": "^22.10.5",
+    "@types/react": "^19.0.7",
+    "@types/react-dom": "^19.0.3",
+    "@types/three": "^0.180.0",
+    "autoprefixer": "^10.4.21",
+    "eslint": "^9",
+    "eslint-config-next": "^15.5.25",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.3"
+  }
+}

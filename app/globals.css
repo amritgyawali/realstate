@@ -1,0 +1,213 @@
+@import '@fortawesome/fontawesome-free/css/all.min.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Sovereign Estate System tokens — see sovereign_estate_system/DESIGN.md */
+    --sovereign-sapphire: #0f2b48;
+    --sovereign-champagne: #c5a869;
+    --sovereign-onyx: #1a1d20;
+    --sovereign-platinum: #5c6470;
+    --sovereign-alabaster: #fafaf8;
+    --sovereign-hairline: #e5e7eb;
+    --header-height: 80px;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-white text-gray-800 antialiased;
+    font-family: var(--font-montserrat), 'Montserrat', 'Helvetica Neue', sans-serif;
+    color: #333333;
+  }
+
+  /* The reference screens set headings in Playfair; Cinzel carries the crest. */
+  .font-serif-title {
+    font-family: var(--font-playfair), 'Playfair Display', Georgia, serif;
+  }
+
+  .serif-title {
+    font-family: var(--font-playfair), 'Playfair Display', Georgia, serif;
+  }
+
+  .font-crest {
+    font-family: var(--font-cinzel), 'Cinzel', serif;
+  }
+
+  .font-luxury {
+    font-family: var(--font-cinzel), 'Cinzel', serif;
+    letter-spacing: 0.08em;
+  }
+
+  ::selection {
+    background: #262626;
+    color: #ffffff;
+  }
+
+  /* Keyboard focus stays visible everywhere without shouting on mouse input. */
+  :focus-visible {
+    outline: 2px solid var(--sovereign-sapphire);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .line-clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* Listing card media mask — 16:10 for properties, 4:5 for broker portraits. */
+  .card-img-container {
+    position: relative;
+    width: 100%;
+    padding-top: 66.25%;
+    overflow: hidden;
+  }
+
+  .card-img-container img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.4s ease;
+  }
+
+  .card-img-container:hover img {
+    transform: scale(1.03);
+  }
+
+  .property-card {
+    transition: transform 0.28s ease, box-shadow 0.28s ease;
+  }
+
+  .property-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 24px -10px rgba(0, 0, 0, 0.15);
+  }
+
+  .img-zoom {
+    transition: transform 0.5s cubic-bezier(0.25, 1, 0.5, 1);
+  }
+
+  .property-card:hover .img-zoom,
+  .group:hover .img-zoom {
+    transform: scale(1.04);
+  }
+
+  /* Filter sidebar primitives, lifted from the 3D/360 Tours mockup. */
+  .filter-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #6b829d;
+    margin-bottom: 2px;
+    display: block;
+  }
+
+  .custom-select {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23888888' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    background-position: right 0.4rem center;
+    background-repeat: no-repeat;
+    background-size: 1.2em 1.2em;
+    padding-right: 1.5rem;
+    appearance: none;
+  }
+
+  .custom-checkbox {
+    border-radius: 2px;
+    border: 1px solid #cbd5e1;
+    color: #1e293b;
+  }
+
+  .badge-regents {
+    background: rgba(31, 36, 41, 0.9);
+    letter-spacing: 0.16em;
+  }
+
+  .hairline {
+    border-color: var(--sovereign-hairline);
+  }
+
+  /* Tour chrome — translucent, blurred, and legible over any panorama. */
+  .tour-glass {
+    background: rgba(12, 14, 17, 0.62);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .tour-pill {
+    @apply tour-glass flex items-center gap-1 rounded-full px-1.5 py-1 text-white;
+  }
+
+  .tour-btn {
+    @apply flex h-8 w-8 items-center justify-center rounded-full text-[13px] text-white/80 transition-colors hover:bg-white/15 hover:text-white;
+  }
+
+  .tour-btn-active {
+    @apply bg-white text-neutral-900 hover:bg-white hover:text-neutral-900;
+  }
+
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background: #eef1f5;
+  }
+
+  .skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.65),
+      transparent
+    );
+    animation: sheen 1.6s ease-in-out infinite;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Honour the OS setting: the tour stops auto-rotating and transitions snap. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
