@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import Image from 'next/image';
+import { Photo } from '@/components/ui/Photo';
 import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/SiteHeader';
 import { SiteFooter } from '@/components/layout/SiteFooter';
@@ -23,7 +23,7 @@ export default function DestinationsPage() {
 
       {/* Hero */}
       <section className="relative h-[340px] w-full overflow-hidden bg-neutral-900 sm:h-[420px]">
-        <Image
+        <Photo
           src={hero.image}
           alt={hero.name}
           fill
@@ -67,7 +67,7 @@ export default function DestinationsPage() {
                 href={`/property/${property.slug}/tour`}
                 className="group relative block aspect-[4/3] overflow-hidden rounded-sm"
               >
-                <Image
+                <Photo
                   src={property.image}
                   alt={property.title}
                   fill

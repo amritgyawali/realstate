@@ -263,7 +263,7 @@ export function ProfessionalsBrowser({ agents }: { agents: Agent[] }) {
                     {agent.name}
                   </h2>
                   <p className="mt-1 text-xs font-normal text-gray-500">{agent.firm}</p>
-                  <p className="text-[11px] text-gray-400">{agent.location}</p>
+                  <p className="text-[11px] text-ink-300">{agent.location}</p>
                 </div>
                 <div className="mt-3 flex items-center gap-3 text-[11px]">
                   <button
@@ -370,24 +370,24 @@ export function ProfessionalsBrowser({ agents }: { agents: Agent[] }) {
               <p className="text-[12px] text-gray-500">
                 {active.title} · {active.firm}
               </p>
-              <p className="text-[11px] text-gray-400">{active.location}</p>
+              <p className="text-[11px] text-ink-300">{active.location}</p>
               <p className="mt-3 text-[12.5px] leading-relaxed text-gray-600">{active.bio}</p>
 
               <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-gray-100 pt-4 text-[11.5px]">
                 <div>
-                  <dt className="text-gray-400">Phone</dt>
+                  <dt className="text-ink-300">Phone</dt>
                   <dd className="font-medium text-gray-800">{active.phone}</dd>
                 </div>
                 <div>
-                  <dt className="text-gray-400">Email</dt>
+                  <dt className="text-ink-300">Email</dt>
                   <dd className="truncate font-medium text-gray-800">{active.email}</dd>
                 </div>
                 <div>
-                  <dt className="text-gray-400">Languages</dt>
+                  <dt className="text-ink-300">Languages</dt>
                   <dd className="font-medium text-gray-800">{active.languages.join(', ')}</dd>
                 </div>
                 <div>
-                  <dt className="text-gray-400">Active listings</dt>
+                  <dt className="text-ink-300">Active listings</dt>
                   <dd className="font-medium text-gray-800">
                     {listingCounts.get(active.slug) ?? 0}
                   </dd>

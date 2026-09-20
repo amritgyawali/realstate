@@ -55,10 +55,14 @@ export function ListingBrowser({
   const [smartText, setSmartText] = useState(params.get('q') ?? '');
 
   // Re-hydrate when the URL changes underneath us (back button, nav links).
+  // `view` and `sort` belong to the URL too — leaving them out meant going back
+  // from the map returned the grid's query but kept the map on screen.
   useEffect(() => {
     setQuery(hydrate(params, lockTour));
     setSmartText(params.get('q') ?? '');
     setPage(Number(params.get('page') ?? 1));
+    setSort((params.get('sort') as SortKey) ?? 'default');
+    setView(params.get('view') === 'map' ? 'map' : 'grid');
   }, [params, lockTour]);
 
   const countries = useMemo(

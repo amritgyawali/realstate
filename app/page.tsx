@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import Image from 'next/image';
+import { Photo } from '@/components/ui/Photo';
 import { SiteHeader } from '@/components/layout/SiteHeader';
 import { SiteFooter } from '@/components/layout/SiteFooter';
 import { HeroCarousel } from '@/components/home/HeroCarousel';
@@ -83,7 +83,7 @@ export default function HomePage() {
                       {agent.firm}
                     </p>
                   </div>
-                  <p className="mt-2 text-[10px] text-slate-400">{agent.location}</p>
+                  <p className="mt-2 text-[10px] text-ink-300">{agent.location}</p>
                 </div>
               </Link>
             ))}
@@ -109,7 +109,7 @@ export default function HomePage() {
                     >
                       {release.title}
                     </Link>
-                    <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-400">
+                    <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-ink-300">
                       <i className="fa-regular fa-clock" aria-hidden="true" /> {release.date}
                       {release.source ? ` — ${release.source}` : ''}
                     </p>
@@ -139,7 +139,7 @@ export default function HomePage() {
                     >
                       {post.title}
                     </Link>
-                    <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-400">
+                    <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-ink-300">
                       <i className="fa-regular fa-clock" aria-hidden="true" /> {post.date}
                       {post.author ? ` — Posted By ${post.author}` : ''}
                     </p>
@@ -175,7 +175,7 @@ export default function HomePage() {
                 className="group block overflow-hidden rounded"
               >
                 <div className="relative h-44 overflow-hidden rounded">
-                  <Image
+                  <Photo
                     src={destination.image}
                     alt={destination.name}
                     fill
@@ -263,7 +263,7 @@ export default function HomePage() {
                     className="group block overflow-hidden rounded border border-gray-200 bg-white transition-colors hover:border-slate-400"
                   >
                     <div className="relative h-28 overflow-hidden">
-                      <Image
+                      <Photo
                         src={card.image}
                         alt={card.title}
                         fill

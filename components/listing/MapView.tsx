@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import type { Property } from '@/lib/types';
 import { compactPrice, locationLabel } from '@/lib/format';
 import { useSession } from '@/lib/store';
+import { hideBrokenPhoto } from '@/components/ui/Photo';
 
 interface MapViewProps {
   properties: Property[];
@@ -15,6 +16,30 @@ interface Cluster {
   left: number;
   top: number;
   items: Property[];
+}
+
+/**
+ * Marker footprint, in map units (the plate is 100 wide by 100 tall and drawn
+ * 2:1, so a unit of height covers half the pixels of a unit of width).
+ *
+ * A bubble is sized by its label, so an "11 listings" count needs far more room
+ * than a "$2.5M" price. The numbers are calibrated against the ~700px plate the
+ * results column gives it; the clearance is deliberately generous, because two
+ * markers that touch are harder to read than one that counts them both.
+ */
+const PLATE_PX = 700;
+const BUBBLE_H = 7.5;
+
+function halfWidth(count: number) {
+  const chars = count === 1 ? 7 : `${count} listings`.length;
+  return ((chars * 6.4 + 24) / 2 / PLATE_PX) * 100;
+}
+
+function collide(a: Cluster, b: Cluster) {
+  return (
+    Math.abs(a.left - b.left) < halfWidth(a.items.length) + halfWidth(b.items.length) &&
+    Math.abs(a.top - b.top) < BUBBLE_H
+  );
 }
 
 /**
@@ -32,25 +57,60 @@ export function MapView({ properties }: MapViewProps) {
   const currency = useSession((state) => state.currency);
 
   // Plate carrée: longitude maps to x linearly, latitude to y inverted.
+  //
+  // Every listing starts as its own marker; colliding markers are then merged
+  // until none overlap. The old fixed grid bucketed by cell, which left two
+  // listings either side of a cell boundary a pixel apart and overprinting —
+  // Colorado came out as four bubbles stacked on one another.
   const clusters = useMemo<Cluster[]>(() => {
-    const buckets = new Map<string, Cluster>();
-    properties.forEach((property) => {
-      const left = ((property.lng + 180) / 360) * 100;
-      const top = ((90 - property.lat) / 180) * 100;
-      // ~3% of map width per cell — roughly the width of a price bubble.
-      const key = `${Math.round(left / 3)}:${Math.round(top / 3)}`;
-      const existing = buckets.get(key);
-      if (existing) {
-        existing.items.push(property);
-        // Keep the bubble at the centroid of everything it covers.
-        existing.left += (left - existing.left) / existing.items.length;
-        existing.top += (top - existing.top) / existing.items.length;
-      } else {
-        buckets.set(key, { id: key, left, top, items: [property] });
+    const out: Cluster[] = properties.map((property) => ({
+      id: property.slug,
+      left: ((property.lng + 180) / 360) * 100,
+      top: ((90 - property.lat) / 180) * 100,
+      items: [property],
+    }));
+
+    // Merge the closest colliding pair, then look again: absorbing two markers
+    // widens the survivor's label, which can bring a third into contact. A
+    // single pass leaves those behind, which is how a market like Colorado ends
+    // up as four bubbles printed over one another.
+    for (;;) {
+      let best: [number, number] | null = null;
+      let bestGap = Infinity;
+      for (let i = 0; i < out.length; i += 1) {
+        for (let j = i + 1; j < out.length; j += 1) {
+          if (!collide(out[i], out[j])) continue;
+          const gap =
+            (out[i].left - out[j].left) ** 2 + ((out[i].top - out[j].top) * 0.5) ** 2;
+          if (gap < bestGap) {
+            bestGap = gap;
+            best = [i, j];
+          }
+        }
       }
-    });
-    return [...buckets.values()].sort((a, b) => a.top - b.top);
+      if (!best) break;
+
+      const [i, j] = best;
+      const a = out[i];
+      const b = out[j];
+      const total = a.items.length + b.items.length;
+      // Weighted centroid, so the bubble sits over the bulk of what it covers.
+      a.left = (a.left * a.items.length + b.left * b.items.length) / total;
+      a.top = (a.top * a.items.length + b.top * b.items.length) / total;
+      a.items.push(...b.items);
+      out.splice(j, 1);
+    }
+
+    return out.sort((a, b) => a.top - b.top);
   }, [properties]);
+
+  // Distinct towns, which is what "markets" means to a reader. It is not the
+  // bubble count: bubbles merge when they would overprint each other, so a
+  // world plate shows four of them for sixteen markets.
+  const marketCount = useMemo(
+    () => new Set(properties.map((p) => `${p.city}|${p.region || p.country}`)).size,
+    [properties],
+  );
 
   const activeProperty = properties.find((p) => p.slug === active);
   const focused = clusters.find((c) => c.id === focusCluster);
@@ -58,7 +118,7 @@ export function MapView({ properties }: MapViewProps) {
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-      <div className="relative overflow-hidden rounded-xs border border-sand-200 bg-[#dfe7ef] shadow-soft">
+      <div className="relative self-start overflow-hidden rounded-xs border border-sand-200 bg-[#dfe7ef] shadow-soft">
         <div className="relative aspect-[2/1] w-full">
           <svg
             viewBox="0 0 360 180"
@@ -117,7 +177,7 @@ export function MapView({ properties }: MapViewProps) {
               >
                 <span
                   className={[
-                    'block whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-bold shadow-soft transition-all duration-300',
+                    'block whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-bold shadow-lift transition-all duration-300',
                     isActive
                       ? 'scale-110 border-ink-900 bg-ink-900 text-white'
                       : single
@@ -143,12 +203,12 @@ export function MapView({ properties }: MapViewProps) {
           })}
         </div>
 
-        <div className="flex items-center justify-between border-t border-sand-200 bg-white px-4 py-2 text-[10px] uppercase tracking-[0.1em] text-ink-300">
-          <span>
-            {properties.length} listings in {clusters.length}{' '}
-            {clusters.length === 1 ? 'market' : 'markets'}
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 border-t border-sand-200 bg-white px-4 py-2 text-[10px] uppercase tracking-[0.1em] text-ink-400">
+          <span className="font-semibold text-ink-700">
+            {properties.length} listings in {marketCount}{' '}
+            {marketCount === 1 ? 'market' : 'markets'}
           </span>
-          <span>Equirectangular projection · city-level positions</span>
+          <span className="hidden sm:block">Equirectangular projection · city-level positions</span>
         </div>
       </div>
 
@@ -166,7 +226,8 @@ export function MapView({ properties }: MapViewProps) {
             <img
               src={activeProperty.image}
               alt={activeProperty.title}
-              className="mb-4 aspect-[16/10] w-full rounded-xs object-cover"
+              className="mb-4 aspect-[16/10] w-full rounded-xs bg-sand-100 object-cover"
+              onError={hideBrokenPhoto}
             />
             <h3 className="font-serif-title text-[18px] text-ink-900">{activeProperty.title}</h3>
             <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-ink-400">{locationLabel(activeProperty)}</p>
@@ -207,7 +268,8 @@ export function MapView({ properties }: MapViewProps) {
                 <img
                   src={property.image}
                   alt=""
-                  className="h-16 w-24 shrink-0 rounded-xs object-cover"
+                  className="h-16 w-24 shrink-0 rounded-xs bg-sand-100 object-cover"
+                  onError={hideBrokenPhoto}
                 />
                 <span className="min-w-0 flex-1">
                   <span className="font-serif-title block truncate text-[15px] text-ink-900">

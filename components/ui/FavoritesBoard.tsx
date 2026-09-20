@@ -49,7 +49,7 @@ export function FavoritesBoard() {
           ].map(([value, label]) => (
             <div key={label}>
               <dt className="font-serif-title text-xl text-gray-900">{value}</dt>
-              <dd className="text-[10px] uppercase tracking-[0.14em] text-gray-400">{label}</dd>
+              <dd className="text-[10px] uppercase tracking-[0.14em] text-ink-300">{label}</dd>
             </div>
           ))}
         </dl>
@@ -92,14 +92,14 @@ export function FavoritesBoard() {
                   <span className="block truncate text-[13px] font-semibold text-gray-900 hover:underline">
                     {search.label}
                   </span>
-                  <span className="block text-[11px] text-gray-400">
+                  <span className="block text-[11px] text-ink-300">
                     Saved {new Date(search.savedAt).toLocaleDateString('en-US')}
                   </span>
                 </Link>
                 <button
                   type="button"
                   onClick={() => removeSearch(search.id)}
-                  className="text-[11px] text-gray-400 transition-colors hover:text-rose-600"
+                  className="text-[11px] text-ink-300 transition-colors hover:text-rose-600"
                 >
                   Remove
                 </button>

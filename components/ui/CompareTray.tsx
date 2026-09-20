@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import { propertyBySlug } from '@/lib/data/properties';
 import { compactPrice, formatArea, locationLabel, priceLabel } from '@/lib/format';
 import { useSession } from '@/lib/store';
+import { hideBrokenPhoto } from '@/components/ui/Photo';
 
 /**
  * Docked compare tray. Holds up to four listings and expands into a side-by-side
@@ -41,7 +42,8 @@ export function CompareTray() {
                 <img
                   src={property!.image}
                   alt=""
-                  className="h-9 w-12 rounded-xs object-cover"
+                  className="h-9 w-12 rounded-xs bg-white/10 object-cover"
+                  onError={hideBrokenPhoto}
                 />
                 <span className="max-w-[140px]">
                   <span className="block truncate text-[11px] font-semibold">

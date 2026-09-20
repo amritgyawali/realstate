@@ -49,6 +49,31 @@
     color: #ffffff;
   }
 
+  /*
+   * `body` is a flex column so the footer sits at the foot of a short page.
+   * Every page shell is `mx-auto max-w-*`, which makes it a flex item with
+   * `margin-inline: auto` — and auto margins beat `align-items: stretch`, so
+   * the shell shrink-wraps its content instead of filling the viewport. Pages
+   * then each settle at a different width: the board came out 675px wide, the
+   * listing rail 220px narrower than the grid it sits beside. Anchor the
+   * landmarks at full width and leave the constraining to `max-w-*`.
+   */
+  body > header,
+  body > main,
+  body > footer {
+    width: 100%;
+  }
+
+  /*
+   * Same flex column: nothing grew, so a page shorter than the viewport left a
+   * band of body background stranded *below* the footer (the 404 and the empty
+   * board both show it). Only `flex-grow` — the tour page sets its own
+   * `flex-1`, and a utility still wins over this.
+   */
+  body > main {
+    flex-grow: 1;
+  }
+
   /* Keyboard focus stays visible everywhere without shouting on mouse input. */
   :focus-visible {
     outline: 2px solid var(--sovereign-sapphire);
@@ -57,6 +82,114 @@
 }
 
 @layer components {
+  /* ---------------------------------------------------------------------
+     Sovereign Estate primitives.
+
+     Buttons, fields, panels and labels the pages compose with. They are
+     defined once here so a control looks the same on the listing rail, the
+     property page and the tour chrome, and so a colour is never hand-rolled
+     at the call site.
+     --------------------------------------------------------------------- */
+
+  .btn-base {
+    @apply inline-flex items-center justify-center gap-2 rounded-xs px-5 py-2.5
+      text-[11px] font-semibold uppercase leading-none tracking-[0.14em]
+      transition-colors duration-200;
+  }
+
+  .btn-ink {
+    @apply btn-base bg-ink-900 text-white hover:bg-ink-950;
+  }
+
+  .btn-gold {
+    @apply btn-base bg-gold-500 text-ink-900 hover:bg-gold-400;
+  }
+
+  .btn-outline {
+    @apply btn-base border border-ink-900 bg-transparent text-ink-900
+      hover:bg-ink-900 hover:text-white;
+  }
+
+  .btn-ghost {
+    @apply btn-base border border-white/30 bg-transparent text-white
+      hover:border-white hover:bg-white hover:text-ink-900;
+  }
+
+  .btn-white {
+    @apply btn-base bg-white text-ink-900 hover:bg-sand-100;
+  }
+
+  /* Inline text action — sits in a heading rule or beside a panel title. */
+  .btn-link {
+    @apply inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase
+      tracking-[0.14em] text-ink-500 transition-colors hover:text-ink-900;
+  }
+
+  .field {
+    @apply w-full rounded-xs border border-sand-300 bg-white px-3.5 py-2.5
+      text-[13px] text-ink-800 placeholder:text-ink-300
+      focus:border-ink-900 focus:outline-none focus:ring-0;
+  }
+
+  .field-sm {
+    @apply field px-2.5 py-1.5 text-[12px];
+  }
+
+  .field-label {
+    @apply mb-1.5 block text-[10px] font-bold uppercase tracking-[0.14em] text-ink-400;
+  }
+
+  .panel {
+    @apply rounded-xs border border-sand-200 bg-white shadow-soft;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-sand-300
+      bg-sand-50 px-2.5 py-1 text-[10.5px] tracking-wide text-ink-600;
+  }
+
+  .chip-gold {
+    @apply chip border-gold-500/40 bg-gold-50 text-gold-700;
+  }
+
+  /* Badges that ride on top of a photograph or a panorama. */
+  .badge-glass {
+    @apply inline-flex items-center gap-1.5 rounded-full bg-ink-950/60 px-2.5 py-1
+      text-[9px] font-bold uppercase tracking-[0.14em] text-white backdrop-blur-sm;
+  }
+
+  .badge-tour {
+    @apply badge-glass text-gold-300;
+  }
+
+  /* Legibility wash under text laid over a photograph. */
+  .scrim {
+    @apply pointer-events-none absolute inset-0
+      bg-gradient-to-t from-ink-950/80 via-ink-950/20 to-transparent;
+  }
+
+  .rule-gold {
+    @apply block h-px w-12 bg-gold-500;
+  }
+
+  /* Cinzel micro-label that opens a section above its serif title. */
+  .eyebrow {
+    font-family: var(--font-cinzel), 'Cinzel', serif;
+    @apply text-[10px] font-semibold uppercase leading-none tracking-[0.22em] text-gold-700;
+  }
+
+  .title-sm {
+    @apply font-serif-title text-[19px] font-normal leading-snug text-ink-900;
+  }
+
+  .title-md {
+    @apply font-serif-title text-[25px] font-normal leading-tight text-ink-900;
+  }
+
+  .title-lg {
+    @apply font-serif-title text-display-sm font-normal text-ink-900;
+  }
+
   .line-clamp-2 {
     display: -webkit-box;
     -webkit-line-clamp: 2;

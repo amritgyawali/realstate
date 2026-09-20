@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import Image from 'next/image';
-import { useCallback, useEffect, useState } from 'react';
+import { Photo } from '@/components/ui/Photo';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Property } from '@/lib/types';
 import { locationLabel, priceLabel } from '@/lib/format';
 import { useSession } from '@/lib/store';
@@ -20,6 +20,8 @@ const INTERVAL = 7000;
 export function HeroCarousel({ slides }: HeroCarouselProps) {
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
+  const sectionRef = useRef<HTMLElement>(null);
+  const swipeFrom = useRef<number | null>(null);
   const currency = useSession((state) => state.currency);
 
   const go = useCallback(
@@ -33,23 +35,61 @@ export function HeroCarousel({ slides }: HeroCarouselProps) {
     return () => clearInterval(timer);
   }, [go, paused, slides.length]);
 
+  // Arrow keys drive the carousel, but only when nothing else is claiming them:
+  // the search console sits inside this section, and stealing Left/Right from a
+  // text field moves the slide instead of the caret.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'ArrowLeft') go(-1);
-      if (event.key === 'ArrowRight') go(1);
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.isContentEditable ||
+          ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(target.tagName))
+      ) {
+        return;
+      }
+      // Anything focused outside the hero owns its own arrow keys.
+      const active = document.activeElement;
+      if (active && active !== document.body && !sectionRef.current?.contains(active)) return;
+
+      go(event.key === 'ArrowLeft' ? -1 : 1);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [go]);
 
+  // Phones have no room for the side arrows once the listing card spans the
+  // full width, so they are hidden there and the slide advances on a swipe
+  // instead. Touches that start inside the search console belong to it.
+  const onTouchStart = (event: React.TouchEvent) => {
+    const target = event.target as HTMLElement;
+    swipeFrom.current = target.closest('[data-purpose="hero-search-bar"]')
+      ? null
+      : event.touches[0].clientX;
+  };
+
+  const onTouchEnd = (event: React.TouchEvent) => {
+    const from = swipeFrom.current;
+    swipeFrom.current = null;
+    if (from === null) return;
+    const dx = event.changedTouches[0].clientX - from;
+    if (Math.abs(dx) > 48) go(dx < 0 ? 1 : -1);
+  };
+
   const slide = slides[index];
 
   return (
     <section
+      ref={sectionRef}
       className="relative h-[620px] w-full overflow-hidden bg-neutral-900 lg:h-[720px]"
       data-purpose="hero-banner"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
       aria-roledescription="carousel"
       aria-label="Featured listings"
     >
@@ -60,7 +100,7 @@ export function HeroCarousel({ slides }: HeroCarouselProps) {
           style={{ opacity: slideIndex === index ? 1 : 0 }}
           aria-hidden={slideIndex !== index}
         >
-          <Image
+          <Photo
             src={item.heroImage ?? item.image}
             alt={item.heroAlt ?? `${item.title}, ${locationLabel(item)}`}
             fill
@@ -77,7 +117,7 @@ export function HeroCarousel({ slides }: HeroCarouselProps) {
         type="button"
         onClick={() => go(-1)}
         aria-label="Previous listing"
-        className="absolute left-6 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur-sm transition-colors hover:bg-black/60"
+        className="absolute left-6 top-1/2 z-20 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur-sm transition-colors hover:bg-black/60 sm:flex"
       >
         <i className="fa-solid fa-chevron-left text-base" aria-hidden="true" />
       </button>
@@ -85,7 +125,7 @@ export function HeroCarousel({ slides }: HeroCarouselProps) {
         type="button"
         onClick={() => go(1)}
         aria-label="Next listing"
-        className="absolute right-6 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur-sm transition-colors hover:bg-black/60"
+        className="absolute right-6 top-1/2 z-20 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur-sm transition-colors hover:bg-black/60 sm:flex"
       >
         <i className="fa-solid fa-chevron-right text-base" aria-hidden="true" />
       </button>
@@ -134,11 +174,17 @@ export function HeroCarousel({ slides }: HeroCarouselProps) {
             onClick={() => setIndex(slideIndex)}
             aria-label={`Go to slide ${slideIndex + 1}`}
             aria-current={slideIndex === index}
-            className={[
-              'h-1 rounded-full transition-all duration-300',
-              slideIndex === index ? 'w-7 bg-white' : 'w-3 bg-white/40 hover:bg-white/70',
-            ].join(' ')}
-          />
+            className="group/dot flex h-8 items-center px-1"
+          >
+            <span
+              className={[
+                'block h-1 rounded-full transition-all duration-300',
+                slideIndex === index
+                  ? 'w-7 bg-white'
+                  : 'w-3 bg-white/40 group-hover/dot:bg-white/70',
+              ].join(' ')}
+            />
+          </button>
         ))}
       </div>
 

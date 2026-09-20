@@ -1,4 +1,4 @@
-import Image from 'next/image';
+import { Photo } from '@/components/ui/Photo';
 import type { Agent } from '@/lib/types';
 
 interface AgentPortraitProps {
@@ -33,7 +33,7 @@ export function AgentPortrait({ agent, sizes, className = '' }: AgentPortraitPro
   }
 
   return (
-    <Image
+    <Photo
       src={agent.image}
       alt={`${agent.name} portrait`}
       fill

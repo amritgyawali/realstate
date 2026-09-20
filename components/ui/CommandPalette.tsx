@@ -9,6 +9,7 @@ import { agents } from '@/lib/data/agents';
 import { describeQuery, parseSmartQuery, suggest } from '@/lib/smart-search';
 import { compactPrice, locationLabel } from '@/lib/format';
 import { useSession } from '@/lib/store';
+import { hideBrokenPhoto } from '@/components/ui/Photo';
 
 interface Shortcut {
   label: string;
@@ -207,7 +208,8 @@ export function CommandPalette() {
                         <img
                           src={row.item.image}
                           alt=""
-                          className="h-10 w-14 shrink-0 rounded-sm object-cover"
+                          className="h-10 w-14 shrink-0 rounded-sm bg-sand-100 object-cover"
+                          onError={hideBrokenPhoto}
                         />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-[13px] font-semibold text-gray-900">
@@ -238,7 +240,7 @@ export function CommandPalette() {
                         <span className="flex-1 text-[13px] font-semibold text-gray-900">
                           {row.item.name}
                         </span>
-                        <span className="text-[11px] text-gray-400">Destination</span>
+                        <span className="text-[11px] text-ink-300">Destination</span>
                       </>
                     )}
                     {row.type === 'agent' && (
@@ -255,7 +257,7 @@ export function CommandPalette() {
                             {row.item.firm}
                           </span>
                         </span>
-                        <span className="text-[11px] text-gray-400">Professional</span>
+                        <span className="text-[11px] text-ink-300">Professional</span>
                       </>
                     )}
                   </Link>
