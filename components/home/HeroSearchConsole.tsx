@@ -7,6 +7,7 @@ import { properties } from '@/lib/data/properties';
 import { describeQuery, parseSmartQuery, suggest } from '@/lib/smart-search';
 import { compactPrice, locationLabel } from '@/lib/format';
 import { useSession } from '@/lib/store';
+import { hideBrokenPhoto } from '@/components/ui/Photo';
 
 const CATEGORIES = [
   { label: 'Homes For Sale', href: '/homes-for-sale' },
@@ -184,7 +185,8 @@ export function HeroSearchConsole() {
               <img
                 src={property.image}
                 alt=""
-                className="h-10 w-14 shrink-0 rounded-sm object-cover"
+                className="h-10 w-14 shrink-0 rounded-sm bg-sand-100 object-cover"
+                onError={hideBrokenPhoto}
               />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] font-semibold text-gray-900">

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import Image from 'next/image';
+import { Photo } from '@/components/ui/Photo';
 import { useEffect, useRef, useState } from 'react';
 import { primaryNav } from '@/lib/data/navigation';
 import { Crest } from '@/components/layout/Crest';
@@ -125,7 +125,7 @@ export function SiteHeader({
                             >
                               {item.label}
                               {item.blurb && (
-                                <span className="block text-[10px] text-gray-400">{item.blurb}</span>
+                                <span className="block text-[10px] text-ink-300">{item.blurb}</span>
                               )}
                             </Link>
                           </li>
@@ -141,7 +141,7 @@ export function SiteHeader({
                       className="group/feature w-[230px] overflow-hidden rounded-sm border border-gray-200"
                     >
                       <div className="relative h-28 overflow-hidden bg-gray-100">
-                        <Image
+                        <Photo
                           src={group.feature.image}
                           alt=""
                           fill

@@ -1,5 +1,6 @@
 'use client';
 
+import { useId, useState } from 'react';
 import type { SearchQuery } from '@/lib/smart-search';
 
 export const CHARACTERISTICS = [
@@ -77,6 +78,29 @@ export function FilterSidebar({
   resultCount,
   lockTour = false,
 }: FilterSidebarProps) {
+  // On a phone the rail stacks above the results, so leaving every group open
+  // buries the first listing under forty controls. Keyword search, the saved
+  // actions and the match count stay out; the groups fold behind one toggle.
+  // The `lg` rail is unaffected — it is always open.
+  const [groupsOpen, setGroupsOpen] = useState(false);
+  const groupsId = useId();
+
+  const activeCount =
+    query.tags.length +
+    [
+      query.maxPrice,
+      query.minPrice,
+      query.beds,
+      query.baths,
+      query.minAcres,
+      query.country,
+      query.city,
+      query.type,
+      query.status,
+    ].filter(Boolean).length +
+    [query.requireRegents, query.requireVideo, query.requireOpenHouse].filter(Boolean).length +
+    (!lockTour && query.requireTour ? 1 : 0);
+
   const toggleTag = (tag: string) => {
     onChange({
       tags: query.tags.includes(tag)
@@ -140,6 +164,31 @@ export function FilterSidebar({
         {resultCount === 1 ? 'listing matches' : 'listings match'} these filters
       </p>
 
+      <button
+        type="button"
+        onClick={() => setGroupsOpen((open) => !open)}
+        aria-expanded={groupsOpen}
+        aria-controls={groupsId}
+        className="mb-4 flex w-full items-center justify-between rounded border border-gray-300 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-gray-700 transition-colors hover:bg-gray-50 lg:hidden"
+      >
+        <span className="flex items-center gap-2">
+          <i className="fa-solid fa-sliders text-[11px] text-gray-500" aria-hidden="true" />
+          Refine
+          {activeCount > 0 && (
+            <span className="rounded-full bg-ink-900 px-1.5 py-0.5 text-[9px] leading-none text-white">
+              {activeCount}
+            </span>
+          )}
+        </span>
+        <i
+          className={`fa-solid fa-chevron-down text-[10px] text-gray-500 transition-transform ${
+            groupsOpen ? 'rotate-180' : ''
+          }`}
+          aria-hidden="true"
+        />
+      </button>
+
+      <div id={groupsId} className={groupsOpen ? 'block' : 'hidden lg:block'}>
       {/* Size & Price */}
       <Section title="Size & Price">
         <div className="mb-2 grid grid-cols-2 gap-2">
@@ -304,6 +353,7 @@ export function FilterSidebar({
           ))}
         </div>
       </Section>
+      </div>
     </aside>
   );
 }

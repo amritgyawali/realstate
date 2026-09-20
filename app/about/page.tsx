@@ -149,15 +149,30 @@ export default function AboutPage() {
             <h2 className="mb-5 font-serif-title text-[20px] font-normal text-stone-900">
               Milestones
             </h2>
-            <ol className="space-y-3.5 text-[12px] leading-relaxed text-[#3a3a3a]">
+            {/* Forty entries read as one wall of text when the year is inline
+                with the sentence, so the year takes its own gutter against a
+                hairline rail and the eye can scan the decades. */}
+            <ol className="border-l border-sand-300 text-[12px] leading-relaxed text-[#3a3a3a]">
               {milestones.map((milestone) => (
-                <li key={`${milestone.year}-${milestone.title}`}>
-                  <strong className="font-semibold text-stone-900">
+                <li
+                  key={`${milestone.year}-${milestone.title}`}
+                  className="relative py-2.5 pl-5 sm:grid sm:grid-cols-[56px_1fr] sm:gap-5 sm:pl-6"
+                >
+                  <span
+                    className="absolute -left-[3px] top-[18px] h-[5px] w-[5px] rounded-full bg-gold-500"
+                    aria-hidden="true"
+                  />
+                  <span className="font-serif-title text-[15px] leading-tight text-stone-900">
                     {milestone.year}
-                    {milestone.title ? ` — ${milestone.title}` : ''}
-                  </strong>
-                  <br />
-                  {milestone.text}
+                  </span>
+                  <span className="block">
+                    {milestone.title && (
+                      <strong className="block font-semibold text-stone-900">
+                        {milestone.title}
+                      </strong>
+                    )}
+                    {milestone.text}
+                  </span>
                 </li>
               ))}
             </ol>
@@ -190,7 +205,7 @@ export default function AboutPage() {
         </div>
 
         {/* Sidebar */}
-        <aside className="space-y-9 lg:col-span-4 lg:pl-4">
+        <aside className="space-y-9 lg:col-span-4 lg:sticky lg:top-16 lg:self-start lg:pl-4">
           <div>
             <h2 className="mb-3 border-b border-gray-200 pb-1.5 font-serif-title text-[17px] text-gray-900">
               About Us
@@ -216,7 +231,7 @@ export default function AboutPage() {
                   <Link href="/press-releases#blog" className="text-[#185b96] hover:underline">
                     {post.title}
                   </Link>
-                  <p className="mt-0.5 flex items-center gap-1.5 text-[10.5px] text-gray-400">
+                  <p className="mt-0.5 flex items-center gap-1.5 text-[10.5px] text-ink-300">
                     <i className="fa-regular fa-clock" aria-hidden="true" /> {post.date}
                   </p>
                 </li>
@@ -237,7 +252,7 @@ export default function AboutPage() {
                   >
                     {release.title}
                   </Link>
-                  <p className="mt-0.5 flex items-center gap-1.5 text-[10.5px] text-gray-400">
+                  <p className="mt-0.5 flex items-center gap-1.5 text-[10.5px] text-ink-300">
                     <i className="fa-regular fa-clock" aria-hidden="true" /> {release.date}
                   </p>
                 </li>

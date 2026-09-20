@@ -1,6 +1,6 @@
 'use client';
 
-import Image from 'next/image';
+import { Photo } from '@/components/ui/Photo';
 import { useState } from 'react';
 import type { Property, PropertyTour } from '@/lib/types';
 import { TourViewer } from '@/components/tour/TourViewer';
@@ -98,7 +98,7 @@ export function MediaStage({ property, tour }: MediaStageProps) {
               className="group relative block aspect-[16/10] w-full"
               aria-label="Open full-size photo"
             >
-              <Image
+              <Photo
                 src={gallery[photoIndex]}
                 alt={`${property.title} — photo ${photoIndex + 1}`}
                 fill
@@ -128,7 +128,7 @@ export function MediaStage({ property, tour }: MediaStageProps) {
               }}
               className="group relative aspect-[4/3] overflow-hidden bg-gray-100"
             >
-              <Image
+              <Photo
                 src={src}
                 alt={`${property.title} — photo ${index + 2}`}
                 fill

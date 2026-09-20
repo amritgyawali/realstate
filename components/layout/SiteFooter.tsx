@@ -42,7 +42,7 @@ export function SiteFooter() {
           ))}
         </div>
 
-        <div className="flex flex-col items-center justify-between pt-6 text-[11px] text-slate-400 md:flex-row">
+        <div className="flex flex-col items-center justify-between pt-6 text-[11px] text-ink-300 md:flex-row">
           <div className="flex items-center gap-3">
             <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-slate-700">
               <Crest className="h-4 w-3.5" />

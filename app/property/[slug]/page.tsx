@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import Image from 'next/image';
 import { notFound } from 'next/navigation';
 import { SiteHeader } from '@/components/layout/SiteHeader';
 import { SiteFooter } from '@/components/layout/SiteFooter';
@@ -199,23 +198,23 @@ export default async function PropertyPage({
               <h2 className="mb-4 border-b border-gray-200 pb-1.5 font-serif-title text-[20px] font-normal text-gray-900">
                 Additional Resources
               </h2>
-              <div className="grid grid-cols-1 gap-x-6 gap-y-3.5 text-[12.5px] md:grid-cols-2">
-                <Resource label="Corporate Website" href="#" />
-                {property.hasTour && (
+              {property.hasTour && (
+                <div className="grid grid-cols-1 gap-x-6 gap-y-3.5 text-[12.5px] md:grid-cols-2">
                   <Resource
                     label="3D Walkover"
                     href={`/property/${property.slug}/tour`}
                     note={`${tour.title} — ${tour.nodes.length} capture points`}
                   />
-                )}
-                <Resource
-                  label="LRE® Property Website"
-                  href="#"
-                  note={property.headline}
-                />
-                {property.hasVideo && <Resource label="Property Video" href="#" note="Cinematic tour" />}
-                <Resource label="Landing Page URL" href="#" />
-              </div>
+                </div>
+              )}
+
+              {/* The feed carries no URL for these, and a link to nowhere reads
+                  as live until it is clicked. Name them once, quietly, instead
+                  of printing four dead rows. */}
+              <p className={`text-[11px] leading-relaxed text-ink-300 ${property.hasTour ? 'mt-4' : ''}`}>
+                Not supplied for this listing: corporate website, LRE® property website
+                {property.hasVideo ? ', property video' : ''}, landing page.
+              </p>
             </section>
           </div>
 
@@ -319,18 +318,18 @@ export default async function PropertyPage({
               </div>
             )}
 
-            <div className="rounded-sm border border-sky-200 bg-sky-50/50 p-2 text-center">
-              <a
-                className="flex items-center justify-center gap-1 text-xs text-sky-800 hover:underline"
-                href="#"
-              >
-                <i className="fa-solid fa-arrow-up-right-from-square text-sky-700" aria-hidden="true" />
-                <span className="font-medium">Read more on member&rsquo;s website</span>
-              </a>
-              <span className="block text-[10px] text-gray-500">
-                {property.agency.toLowerCase().replace(/[^a-z]/g, '').slice(0, 18)}.com
+            {/* The member's own site is not in the feed, so this points at the
+                brokerage's profile here rather than at a dead `#`. */}
+            <Link
+              href={`/professionals#${agent.slug}`}
+              className="block rounded-sm border border-sky-200 bg-sky-50/50 p-2 text-center transition-colors hover:bg-sky-50"
+            >
+              <span className="flex items-center justify-center gap-1 text-xs text-sky-800">
+                <i className="fa-solid fa-arrow-right text-sky-700" aria-hidden="true" />
+                <span className="font-medium">More from this member</span>
               </span>
-            </div>
+              <span className="block text-[10px] text-gray-500">{property.agency}</span>
+            </Link>
 
             <InquiryForm property={property} agent={agent} />
           </div>
@@ -352,7 +351,7 @@ export default async function PropertyPage({
           </section>
         )}
 
-        <section className="mb-10 text-[10px] leading-relaxed text-gray-400">
+        <section className="mb-10 text-[10px] leading-relaxed text-ink-300">
           <h2 className="mb-1.5 text-[11px] font-semibold text-gray-600">Disclaimers</h2>
           <p className="mb-1">Last updated: {formatDate(property.listedOn)}</p>
           <p className="italic">
@@ -371,6 +370,15 @@ export default async function PropertyPage({
   );
 }
 
+/**
+ * A resource row.
+ *
+ * Feeds do not carry a URL for every one of these — a listing may have no
+ * corporate site on file — and a link to `#` is worse than no link: it reads as
+ * live, and clicking it does nothing. Without an `href` the row states that the
+ * resource was not supplied, the way the rest of the build is explicit about
+ * what is not wired up.
+ */
 function Resource({ label, href, note }: { label: string; href: string; note?: string }) {
   return (
     <div>

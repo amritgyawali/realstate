@@ -340,16 +340,16 @@ export function TourViewer({
       )}
 
       {/* ------------------------------------------------------- top bar -- */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-40 flex items-start justify-between bg-gradient-to-b from-black/70 via-black/25 to-transparent p-3">
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-40 flex items-start justify-between bg-gradient-to-b from-black/80 via-black/40 to-transparent pb-8 pt-3 px-3">
         <div className="flex items-center gap-2">
           <span className="rounded bg-black/60 px-2 py-0.5 font-mono text-[11px] tracking-wide">
             {tour.nodes.findIndex((n) => n.id === node.id) + 1}/{tour.nodes.length}
           </span>
           <span>
-            <span className="block text-[13px] font-medium tracking-tight drop-shadow">
+            <span className="block text-[13px] font-medium tracking-tight drop-shadow-md">
               {mode === 'matterport' ? 'Matterport' : node.name}
             </span>
-            <span className="block text-[10px] text-ink-200 drop-shadow">
+            <span className="block text-[10px] text-ink-100 drop-shadow-md">
               {tour.title} • Presented by {tour.capturedBy}
             </span>
           </span>

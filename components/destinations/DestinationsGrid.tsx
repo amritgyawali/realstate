@@ -1,6 +1,6 @@
 'use client';
 
-import Image from 'next/image';
+import { Photo } from '@/components/ui/Photo';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import type { Destination } from '@/lib/types';
@@ -135,7 +135,7 @@ export function DestinationsGrid({ destinations }: { destinations: Destination[]
             >
               <Link href={`/homes-for-sale?q=${encodeURIComponent(destination.name)}`}>
                 <div className="relative aspect-[16/10] overflow-hidden bg-gray-100">
-                  <Image
+                  <Photo
                     src={destination.image}
                     alt={destination.name}
                     fill

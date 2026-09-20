@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import Image from 'next/image';
+import { Photo } from '@/components/ui/Photo';
 import Link from 'next/link';
 import { SiteHeader } from '@/components/layout/SiteHeader';
 import { SiteFooter } from '@/components/layout/SiteFooter';
@@ -61,7 +61,7 @@ export default function PressReleasesPage() {
                 <div className="flex flex-col items-start gap-4 sm:flex-row">
                   {release.image && (
                     <div className="relative h-28 w-full shrink-0 border border-gray-200 sm:w-40">
-                      <Image
+                      <Photo
                         src={release.image}
                         alt=""
                         fill
@@ -122,10 +122,8 @@ export default function PressReleasesPage() {
             <ul className="space-y-3 text-[11.5px]">
               {blogPosts.map((post) => (
                 <li key={post.slug}>
-                  <Link href="#" className="font-medium text-[#185b96] hover:underline">
-                    {post.title}
-                  </Link>
-                  <p className="mt-0.5 flex items-center gap-1.5 text-[10.5px] text-gray-400">
+                  <p className="font-medium text-gray-800">{post.title}</p>
+                  <p className="mt-0.5 flex items-center gap-1.5 text-[10.5px] text-ink-300">
                     <i className="fa-regular fa-clock" aria-hidden="true" /> {post.date}
                     {post.author ? ` — Posted By ${post.author}` : ''}
                   </p>
@@ -147,7 +145,7 @@ export default function PressReleasesPage() {
                   >
                     {release.title}
                   </Link>
-                  <p className="mt-0.5 flex items-center gap-1.5 text-[10.5px] text-gray-400">
+                  <p className="mt-0.5 flex items-center gap-1.5 text-[10.5px] text-ink-300">
                     <i className="fa-regular fa-clock" aria-hidden="true" /> {release.date}
                     {release.source ? ` — ${release.source}` : ''}
                   </p>
@@ -163,9 +161,7 @@ export default function PressReleasesPage() {
             <ul className="space-y-2 text-[11.5px]">
               {weekInReview.map((week) => (
                 <li key={week}>
-                  <Link href="#" className="text-[#185b96] hover:underline">
-                    {week}
-                  </Link>
+                  <span className="text-gray-700">{week}</span>
                 </li>
               ))}
             </ul>

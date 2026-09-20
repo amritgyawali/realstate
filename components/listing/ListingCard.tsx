@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import Image from 'next/image';
+import { Photo } from '@/components/ui/Photo';
 import type { Property } from '@/lib/types';
 import { compactPrice, locationLabel, priceLabel } from '@/lib/format';
 import { useSession } from '@/lib/store';
@@ -27,7 +27,7 @@ export function ListingCard({ property, variant = 'sale', priority = false }: Li
         <ListingActions slug={property.slug} title={property.title} />
         <Link href={href} className="flex flex-1 flex-col">
           <div className="relative h-44 overflow-hidden sm:h-48">
-            <Image
+            <Photo
               src={property.image}
               alt={property.title}
               fill
@@ -59,7 +59,7 @@ export function ListingCard({ property, variant = 'sale', priority = false }: Li
               </h3>
               <p className="mt-0.5 text-[11px] font-medium text-slate-500">{property.agency}</p>
             </div>
-            <p className="mt-2 text-[11px] text-slate-400">{locationLabel(property)}</p>
+            <p className="mt-2 text-[11px] text-ink-300">{locationLabel(property)}</p>
           </div>
         </Link>
       </article>
@@ -73,7 +73,7 @@ export function ListingCard({ property, variant = 'sale', priority = false }: Li
         className="group flex gap-3 border-b border-gray-100 p-3 transition-colors hover:bg-gray-50"
       >
         <div className="relative h-20 w-28 shrink-0 overflow-hidden rounded-sm bg-gray-100">
-          <Image
+          <Photo
             src={property.image}
             alt={property.title}
             fill
@@ -87,7 +87,7 @@ export function ListingCard({ property, variant = 'sale', priority = false }: Li
           <p className="mt-1 text-[12px] font-bold text-gray-900">
             {priceLabel(property, currency)}
           </p>
-          <p className="mt-0.5 text-[11px] text-gray-400">
+          <p className="mt-0.5 text-[11px] text-ink-300">
             {property.beds} bd · {property.baths} ba · {property.sqft.toLocaleString('en-US')} sqft
           </p>
         </div>
@@ -112,7 +112,7 @@ export function ListingCard({ property, variant = 'sale', priority = false }: Li
             isTour ? 'aspect-[4/3]' : 'aspect-[16/10]',
           ].join(' ')}
         >
-          <Image
+          <Photo
             src={property.image}
             alt={property.title}
             fill

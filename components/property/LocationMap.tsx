@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { Property } from '@/lib/types';
 import { compactPrice, locationLabel } from '@/lib/format';
 import { useSession } from '@/lib/store';
+import { hideBrokenPhoto } from '@/components/ui/Photo';
 
 type Layer = 'Standard' | 'Terrain' | 'Satellite';
 
@@ -149,7 +150,8 @@ export function LocationMap({ property }: { property: Property }) {
                   key={index}
                   src={src}
                   alt=""
-                  className="h-14 w-1/2 rounded-[2px] object-cover"
+                  className="h-14 w-1/2 rounded-[2px] bg-sand-100 object-cover"
+                  onError={hideBrokenPhoto}
                 />
               ))}
             </div>
