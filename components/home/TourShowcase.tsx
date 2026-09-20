@@ -30,7 +30,7 @@ export function TourShowcase({ entries }: TourShowcaseProps) {
 
   return (
     <section
-      className="relative overflow-hidden bg-[#111315] py-14 text-white"
+      className="relative overflow-hidden bg-[#111315] py-10 text-white"
       data-purpose="tour-showcase"
     >
       <div
@@ -47,7 +47,7 @@ export function TourShowcase({ entries }: TourShowcaseProps) {
       <div className="absolute inset-0 bg-gradient-to-b from-[#111315] via-[#111315]/75 to-[#111315]" aria-hidden="true" />
 
       <div className="relative mx-auto max-w-page px-4 md:px-8">
-        <div className="mb-7 flex flex-wrap items-end justify-between gap-4 border-b border-white/15 pb-3">
+        <div className="mb-6 flex flex-wrap items-end justify-between gap-4 border-b border-white/15 pb-3">
           <div>
             <p className="mb-1 font-crest text-[10px] uppercase tracking-[0.3em] text-[#c5a869]">
               Virtual Walkover
@@ -69,11 +69,11 @@ export function TourShowcase({ entries }: TourShowcaseProps) {
           </Link>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[1.55fr_1fr]">
+        <div className="grid items-stretch gap-6 lg:grid-cols-[1.55fr_1fr]">
           {/* Stage */}
           <Link
             href={`/property/${entry.property.slug}/tour`}
-            className="group relative block aspect-[16/10] overflow-hidden rounded-sm border border-white/12"
+            className="group relative block aspect-[16/10] overflow-hidden rounded-sm border border-white/12 lg:aspect-auto lg:h-full"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -129,7 +129,7 @@ export function TourShowcase({ entries }: TourShowcaseProps) {
               ))}
             </div>
 
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-3">
               {entry.tour.nodes.map((candidate, index) => (
                 <button
                   key={candidate.id}
