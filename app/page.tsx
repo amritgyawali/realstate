@@ -40,10 +40,10 @@ export default function HomePage() {
       <SiteHeader variant="banner" />
       <HeroCarousel slides={heroSlides} />
 
-      <main id="main">
+      <main id="main" data-page="home">
         {/* Four-across highlights */}
         <section
-          className="mx-auto max-w-page px-4 pb-12 pt-16 md:px-8"
+          className="home-section"
           data-purpose="featured-top-listings"
         >
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
@@ -62,11 +62,11 @@ export default function HomePage() {
 
         {/* Featured Professionals */}
         <section
-          className="mx-auto max-w-page px-4 py-10 md:px-8"
+          className="home-section"
           data-purpose="featured-professionals"
         >
           <SectionHeading title="Featured Professionals" action={{ label: 'All Professionals', href: '/professionals' }} />
-          <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-5">
             {featuredPros.map((agent) => (
               <Link
                 key={agent.slug}
@@ -92,10 +92,10 @@ export default function HomePage() {
 
         {/* Press & blog */}
         <section
-          className="mx-auto max-w-page px-4 py-8 md:px-8"
+          className="home-section"
           data-purpose="editorial-updates"
         >
-          <div className="grid grid-cols-1 gap-10 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
             <div>
               <h3 className="mb-4 border-b border-gray-200 pb-2 font-serif-title text-lg font-semibold text-slate-900 md:text-xl">
                 Recent Press Releases
@@ -116,7 +116,7 @@ export default function HomePage() {
                   </div>
                 ))}
               </div>
-              <div className="mt-5">
+              <div className="mt-4">
                 <Link
                   href="/press-releases"
                   className="inline-block rounded bg-[#4c545c] px-4 py-1.5 text-xs text-white transition-colors hover:bg-[#373e44]"
@@ -146,7 +146,7 @@ export default function HomePage() {
                   </div>
                 ))}
               </div>
-              <div className="mt-5">
+              <div className="mt-4">
                 <Link
                   href="/press-releases#blog"
                   className="inline-block rounded bg-[#4c545c] px-4 py-1.5 text-xs text-white transition-colors hover:bg-[#373e44]"
@@ -160,7 +160,7 @@ export default function HomePage() {
 
         {/* Featured Destinations */}
         <section
-          className="mx-auto max-w-page px-4 py-10 md:px-8"
+          className="home-section"
           data-purpose="destinations-overview"
         >
           <SectionHeading
@@ -193,7 +193,7 @@ export default function HomePage() {
 
         {/* Recent Noteworthy Listings */}
         <section
-          className="mx-auto max-w-page px-4 py-8 md:px-8"
+          className="home-section"
           data-purpose="noteworthy-listings-grid"
         >
           <SectionHeading
@@ -209,7 +209,7 @@ export default function HomePage() {
 
         {/* More to Discover */}
         <section
-          className="mx-auto max-w-page px-4 py-8 md:px-8"
+          className="home-section"
           data-purpose="more-to-discover-grid"
         >
           <SectionHeading title="More to Discover" />
@@ -222,7 +222,7 @@ export default function HomePage() {
 
         {/* Worldwide Luxury */}
         <section
-          className="relative border-b border-t border-gray-200 bg-slate-50 py-12"
+          className="relative border-b border-t border-gray-200 bg-slate-50 py-10"
           data-purpose="worldwide-directory"
         >
           <div
@@ -230,39 +230,44 @@ export default function HomePage() {
             aria-hidden="true"
           />
           <div className="relative z-10 mx-auto max-w-page px-4 md:px-8">
-            <div className="mb-8">
+            <div className="mb-6">
               <h2 className="mb-2 font-serif-title text-xl font-medium text-slate-900 md:text-2xl">
                 Worldwide Luxury
               </h2>
               <p className="max-w-5xl text-xs leading-relaxed text-slate-600">{worldwideIntro}</p>
             </div>
 
-            <div className="grid grid-cols-2 gap-6 text-xs text-slate-700 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-              <div>
-                {territoryGroups.slice(0, 4).map((group) => (
-                  <TerritoryList key={group.region} group={group} />
-                ))}
-              </div>
-              <div>
-                <TerritoryList group={territoryGroups[4]} />
-              </div>
-              <div>
-                <TerritoryList group={territoryGroups[5]} />
-              </div>
-              <div>
-                {territoryGroups.slice(6).map((group) => (
-                  <TerritoryList key={group.region} group={group} />
+            <div className="grid gap-6 lg:grid-cols-3">
+              {/*
+                The regions were hand-packed into four columns, and the packing
+                could not hold: Europe alone is longer than the three short
+                regions stacked beside it, so every other column stopped a
+                hundred-odd pixels short and the band trailed off into blank
+                paper. A balanced multi-column flow measures the regions itself
+                and closes all four columns at the same line; a region never
+                splits across a column break.
+              */}
+              <div className="columns-2 gap-6 text-xs text-slate-700 sm:columns-3 lg:col-span-2 lg:columns-4">
+                {territoryGroups.map((group) => (
+                  <div key={group.region} className="mb-5 break-inside-avoid last:mb-0">
+                    <TerritoryList group={group} />
+                  </div>
                 ))}
               </div>
 
-              <div className="col-span-2 flex flex-col space-y-4">
+              {/*
+                The cards ride in the last column: they stretch to whatever
+                height the directory settles at rather than leaving a gap under
+                the third one.
+              */}
+              <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-1">
                 {explorationCards.map((card, index) => (
                   <Link
                     key={card.title}
                     href={index === 1 ? '/destinations' : index === 2 ? '/destinations' : '/homes-for-sale'}
-                    className="group block overflow-hidden rounded border border-gray-200 bg-white transition-colors hover:border-slate-400"
+                    className="group flex flex-col overflow-hidden rounded border border-gray-200 bg-white transition-colors hover:border-slate-400"
                   >
-                    <div className="relative h-28 overflow-hidden">
+                    <div className="relative min-h-[112px] flex-1 overflow-hidden">
                       <Photo
                         src={card.image}
                         alt={card.title}
@@ -295,7 +300,7 @@ function TerritoryList({
 }) {
   return (
     <>
-      <h4 className="mb-2 border-b border-gray-200 pb-1 font-bold text-slate-900 first:mt-0 [&:not(:first-child)]:mt-5">
+      <h4 className="mb-2 border-b border-gray-200 pb-1 font-bold text-slate-900">
         {group.region}
       </h4>
       <ul className="space-y-1.5 text-[11px]">

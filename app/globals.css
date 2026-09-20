@@ -20,6 +20,28 @@
     scroll-behavior: smooth;
   }
 
+  /*
+   * The homepage is drawn for the proportions it has at 90% browser zoom: the
+   * 1400px shell then sits inside a laptop viewport with room to breathe
+   * instead of pressing against its edges, and the hero, the card grids and the
+   * type all land at the size the design was signed off at. `zoom` on the root
+   * reproduces that exactly — every length, the fixed-height hero and the
+   * sticky header scale together, and viewport units still resolve against the
+   * whole window, so nothing is left stranded at the foot of the page.
+   *
+   * `:has()` keeps it to the one route: the marker sits on the homepage
+   * `<main>`, so every other page — and a client-side navigation away from
+   * home — renders at 1:1 with no flash of the wrong scale. It is a desktop
+   * measure only: a phone is already showing the one-column layout at the size
+   * its owner chose, and shrinking that type by a tenth would only make it
+   * harder to read.
+   */
+  @media (min-width: 1024px) {
+    :root:has(main[data-page='home']) {
+      zoom: 0.9;
+    }
+  }
+
   body {
     @apply bg-white text-gray-800 antialiased;
     font-family: var(--font-montserrat), 'Montserrat', 'Helvetica Neue', sans-serif;
@@ -90,6 +112,21 @@
      property page and the tour chrome, and so a colour is never hand-rolled
      at the call site.
      --------------------------------------------------------------------- */
+
+  /*
+   * Homepage band rhythm.
+   *
+   * Every block on the homepage opened with its own hand-tuned padding —
+   * 64/48 under the hero, then 40, 32, 40, 32, 32 — so the gaps between
+   * sections stepped about at random and the top of the page carried twice the
+   * air of the bottom. One shell, one measure of vertical air: the page reads
+   * as an evenly spaced column, and the rhythm is changed in one place.
+   * Full-bleed bands (the tour showcase, the worldwide directory) carry their
+   * own background and set their padding themselves, a notch wider.
+   */
+  .home-section {
+    @apply mx-auto w-full max-w-page px-4 py-9 md:px-8;
+  }
 
   .btn-base {
     @apply inline-flex items-center justify-center gap-2 rounded-xs px-5 py-2.5
