@@ -15,6 +15,27 @@ export interface TourHotspot {
   pitch: number;
   label: string;
   body?: string;
+  /**
+   * Metres walked to reach the destination. Optional: by default a floor-level
+   * nav hotspot is taken to mark the spot you step to, so the distance follows
+   * from its pitch and the eye height.
+   */
+  distance?: number;
+}
+
+/**
+ * The rough shape of the space a panorama was captured in. The walk engine
+ * projects each panorama onto this proxy (a floor, a ceiling and a round wall)
+ * so the camera can physically move through the room instead of cutting
+ * between fixed viewpoints.
+ */
+export interface TourRoom {
+  /** Distance from the capture point to the walls, in metres. */
+  radius?: number;
+  /** Floor-to-ceiling height, in metres. Ignored outdoors. */
+  ceiling?: number;
+  /** Open to the sky: no ceiling, and walls far enough to read as horizon. */
+  outdoor?: boolean;
 }
 
 export interface TourNode {
@@ -22,11 +43,17 @@ export interface TourNode {
   name: string;
   /** Basename in /public/panoramas — `<pano>.jpg` and `<pano>-preview.jpg`. */
   pano: string;
+  /**
+   * Optional equirectangular 360° video (mp4/webm) that plays in place of the
+   * still. The still stays the poster and the fallback when video can't play.
+   */
+  video?: string;
   floor: number;
   /** Normalised 0-1 position on the floor plan, used by the minimap. */
   plan: { x: number; y: number };
   /** Yaw the camera faces when the node is entered, in degrees. */
   entryYaw: number;
+  room?: TourRoom;
   hotspots: TourHotspot[];
 }
 

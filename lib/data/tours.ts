@@ -9,8 +9,15 @@ import type { PropertyTour } from '@/lib/types';
  * between rooms. Yaw is degrees clockwise from the panorama seam, pitch is
  * degrees above the horizon, so a hotspot at pitch -12 sits on the floor ahead.
  *
- * `plan` coordinates are normalised (0-1) positions on the floor-plan minimap,
- * which doubles as the dollhouse overview.
+ * Nav hotspots are aimed at the doorway, arch or stair visible in the capture,
+ * because walking to one moves the camera towards it: the transition reads as
+ * stepping through that opening. A floor-level marker's pitch sets how far the
+ * step is (see `hotspotDistance` in lib/tour-graph.ts).
+ *
+ * `plan` coordinates are normalised (0-1) positions on the floor plan; the
+ * room outlines, minimap and 3D dollhouse are all derived from them. `room` is
+ * the rough size of the captured space, which the walk engine projects the
+ * panorama onto.
  *
  * Panoramas are CC0 equirectangular captures (4096x2048 with a 1024x512 preview
  * for progressive load) stored in /public/panoramas.
@@ -41,13 +48,15 @@ const telluride: PropertyTour = {
       pano: 'entrance_hall',
       floor: 1,
       plan: { x: 0.16, y: 0.74 },
-      entryYaw: 8,
+      entryYaw: -45,
+      room: { radius: 5, ceiling: 3.4 },
       hotspots: [
-        { kind: 'nav', to: 'great', yaw: 34, pitch: -14, label: 'Great Room' },
+        { kind: 'nav', to: 'great', yaw: -45, pitch: -13, label: 'Great Room' },
+        { kind: 'nav', to: 'primary', yaw: -150, pitch: 6, label: 'Upstairs — Primary Suite' },
         {
           kind: 'info',
-          yaw: -68,
-          pitch: -4,
+          yaw: 100,
+          pitch: -6,
           label: 'Heated ski locker',
           body: 'Boot dryers, a snowmelt entry slab and a dedicated gear wall sit immediately off the arrival vestibule.',
         },
@@ -59,16 +68,16 @@ const telluride: PropertyTour = {
       pano: 'lythwood_lounge',
       floor: 1,
       plan: { x: 0.41, y: 0.56 },
-      entryYaw: 20,
+      entryYaw: -36,
+      room: { radius: 6, ceiling: 3 },
       hotspots: [
-        { kind: 'nav', to: 'entry', yaw: 196, pitch: -16, label: 'Entrance Hall' },
-        { kind: 'nav', to: 'hearth', yaw: -78, pitch: -13, label: 'Hearth Room' },
-        { kind: 'nav', to: 'kitchen', yaw: 64, pitch: -13, label: 'Kitchen & Dining' },
-        { kind: 'nav', to: 'primary', yaw: 148, pitch: 9, label: 'Upstairs — Primary Suite' },
+        { kind: 'nav', to: 'entry', yaw: 178, pitch: -12, label: 'Entrance Hall' },
+        { kind: 'nav', to: 'hearth', yaw: -128, pitch: -11, label: 'Hearth Room' },
+        { kind: 'nav', to: 'kitchen', yaw: 68, pitch: -12, label: 'Kitchen & Dining' },
         {
           kind: 'info',
-          yaw: 12,
-          pitch: 7,
+          yaw: -36,
+          pitch: 4,
           label: 'Floor-to-ceiling glazing',
           body: 'Triple-glazed, argon-filled window wall framing the box canyon and the ski area beyond.',
         },
@@ -80,13 +89,14 @@ const telluride: PropertyTour = {
       pano: 'fireplace',
       floor: 1,
       plan: { x: 0.29, y: 0.34 },
-      entryYaw: 0,
+      entryYaw: -65,
+      room: { radius: 4, ceiling: 2.9 },
       hotspots: [
-        { kind: 'nav', to: 'great', yaw: 124, pitch: -15, label: 'Great Room' },
+        { kind: 'nav', to: 'great', yaw: 176, pitch: -13, label: 'Great Room' },
         {
           kind: 'info',
-          yaw: -6,
-          pitch: -2,
+          yaw: -65,
+          pitch: -8,
           label: 'Board-formed concrete hearth',
           body: 'Cast on site with reclaimed fir formwork, paired with a sealed-combustion firebox.',
         },
@@ -98,14 +108,15 @@ const telluride: PropertyTour = {
       pano: 'glasshouse_interior',
       floor: 1,
       plan: { x: 0.66, y: 0.46 },
-      entryYaw: -20,
+      entryYaw: -62,
+      room: { radius: 4.5, ceiling: 2.8 },
       hotspots: [
-        { kind: 'nav', to: 'great', yaw: -152, pitch: -15, label: 'Great Room' },
-        { kind: 'nav', to: 'deck', yaw: 44, pitch: -11, label: 'Mountain Deck' },
+        { kind: 'nav', to: 'great', yaw: 101, pitch: -12, label: 'Great Room' },
+        { kind: 'nav', to: 'deck', yaw: -62, pitch: -10, label: 'Mountain Deck' },
         {
           kind: 'info',
-          yaw: 96,
-          pitch: -3,
+          yaw: 75,
+          pitch: -8,
           label: 'Appliance package',
           body: 'Dishwasher, disposal, microwave oven, range/oven and refrigerator, with a butler pantry behind.',
         },
@@ -118,9 +129,10 @@ const telluride: PropertyTour = {
       floor: 1,
       plan: { x: 0.85, y: 0.62 },
       entryYaw: 12,
+      room: { outdoor: true, radius: 10 },
       hotspots: [
-        { kind: 'nav', to: 'kitchen', yaw: 172, pitch: -17, label: 'Kitchen & Dining' },
-        { kind: 'nav', to: 'overlook', yaw: 22, pitch: -8, label: 'Box Canyon Overlook' },
+        { kind: 'nav', to: 'kitchen', yaw: 125, pitch: -11, label: 'Kitchen & Dining' },
+        { kind: 'nav', to: 'overlook', yaw: -142, pitch: -12, label: 'Box Canyon Overlook' },
         {
           kind: 'info',
           yaw: -40,
@@ -136,9 +148,10 @@ const telluride: PropertyTour = {
       pano: 'sterkspruit_falls',
       floor: 1,
       plan: { x: 0.93, y: 0.24 },
-      entryYaw: 0,
+      entryYaw: 12,
+      room: { outdoor: true },
       hotspots: [
-        { kind: 'nav', to: 'deck', yaw: -162, pitch: -14, label: 'Mountain Deck' },
+        { kind: 'nav', to: 'deck', yaw: 165, pitch: -12, label: 'Mountain Deck' },
         {
           kind: 'info',
           yaw: 20,
@@ -154,14 +167,15 @@ const telluride: PropertyTour = {
       pano: 'lythwood_room',
       floor: 2,
       plan: { x: 0.35, y: 0.3 },
-      entryYaw: -10,
+      entryYaw: -52,
+      room: { radius: 5, ceiling: 2.8 },
       hotspots: [
-        { kind: 'nav', to: 'bath', yaw: 88, pitch: -13, label: 'Primary Bath' },
-        { kind: 'nav', to: 'great', yaw: -128, pitch: -24, label: 'Downstairs — Great Room' },
+        { kind: 'nav', to: 'bath', yaw: -173, pitch: -11, label: 'Primary Bath' },
+        { kind: 'nav', to: 'entry', yaw: 157, pitch: -14, label: 'Downstairs — Entrance Hall' },
         {
           kind: 'info',
-          yaw: 4,
-          pitch: 3,
+          yaw: -52,
+          pitch: 4,
           label: 'Ski area aspect',
           body: 'The bed wall faces due south; the glazing opposite frames the upper mountain runs.',
         },
@@ -173,13 +187,14 @@ const telluride: PropertyTour = {
       pano: 'en_suite',
       floor: 2,
       plan: { x: 0.56, y: 0.22 },
-      entryYaw: 0,
+      entryYaw: 20,
+      room: { radius: 3.2, ceiling: 2.6 },
       hotspots: [
-        { kind: 'nav', to: 'primary', yaw: -98, pitch: -14, label: 'Primary Suite' },
+        { kind: 'nav', to: 'primary', yaw: -70, pitch: -11, label: 'Primary Suite' },
         {
           kind: 'info',
-          yaw: 30,
-          pitch: -2,
+          yaw: -20,
+          pitch: -32,
           label: 'Radiant stone floor',
           body: 'Honed limestone over hydronic radiant, with a steam shower and a freestanding soaking tub.',
         },
@@ -205,9 +220,10 @@ const coastal: PropertyTour = {
       pano: 'qwantani_patio',
       floor: 1,
       plan: { x: 0.14, y: 0.7 },
-      entryYaw: 0,
+      entryYaw: -70,
+      room: { radius: 7, ceiling: 2.7 },
       hotspots: [
-        { kind: 'nav', to: 'veranda', yaw: 40, pitch: -13, label: 'Veranda' },
+        { kind: 'nav', to: 'veranda', yaw: 80, pitch: -12, label: 'Veranda' },
         {
           kind: 'info',
           yaw: -70,
@@ -223,11 +239,12 @@ const coastal: PropertyTour = {
       pano: 'veranda',
       floor: 1,
       plan: { x: 0.34, y: 0.58 },
-      entryYaw: 16,
+      entryYaw: -84,
+      room: { radius: 5, ceiling: 2.6 },
       hotspots: [
-        { kind: 'nav', to: 'courtyard', yaw: -144, pitch: -15, label: 'Arrival Courtyard' },
-        { kind: 'nav', to: 'living', yaw: 52, pitch: -12, label: 'Living Pavilion' },
-        { kind: 'nav', to: 'pool', yaw: -34, pitch: -11, label: 'Indoor Pool' },
+        { kind: 'nav', to: 'courtyard', yaw: -84, pitch: -12, label: 'Arrival Courtyard' },
+        { kind: 'nav', to: 'living', yaw: 62, pitch: -12, label: 'Living Pavilion' },
+        { kind: 'nav', to: 'pool', yaw: -17, pitch: -11, label: 'Indoor Pool' },
       ],
     },
     {
@@ -237,10 +254,11 @@ const coastal: PropertyTour = {
       floor: 1,
       plan: { x: 0.5, y: 0.48 },
       entryYaw: -8,
+      room: { radius: 6.5, ceiling: 3.2 },
       hotspots: [
-        { kind: 'nav', to: 'veranda', yaw: -136, pitch: -14, label: 'Veranda' },
-        { kind: 'nav', to: 'terrace', yaw: 58, pitch: -12, label: 'Sunset Terrace' },
-        { kind: 'nav', to: 'suite', yaw: 128, pitch: 8, label: 'Upstairs — Seaview Suite' },
+        { kind: 'nav', to: 'veranda', yaw: 111, pitch: -12, label: 'Veranda' },
+        { kind: 'nav', to: 'terrace', yaw: 48, pitch: -12, label: 'Sunset Terrace' },
+        { kind: 'nav', to: 'suite', yaw: 82, pitch: 5, label: 'Upstairs — Seaview Suite' },
         {
           kind: 'info',
           yaw: -10,
@@ -257,9 +275,10 @@ const coastal: PropertyTour = {
       floor: 1,
       plan: { x: 0.3, y: 0.28 },
       entryYaw: 0,
+      room: { radius: 7, ceiling: 3 },
       hotspots: [
-        { kind: 'nav', to: 'veranda', yaw: 150, pitch: -15, label: 'Veranda' },
-        { kind: 'nav', to: 'spa', yaw: 46, pitch: -11, label: 'Spa Bath' },
+        { kind: 'nav', to: 'veranda', yaw: 97, pitch: -12, label: 'Veranda' },
+        { kind: 'nav', to: 'spa', yaw: 71, pitch: -12, label: 'Spa Bath' },
         {
           kind: 'info',
           yaw: -30,
@@ -275,8 +294,9 @@ const coastal: PropertyTour = {
       pano: 'modern_bathroom',
       floor: 1,
       plan: { x: 0.62, y: 0.24 },
-      entryYaw: 0,
-      hotspots: [{ kind: 'nav', to: 'pool', yaw: -134, pitch: -14, label: 'Indoor Pool' }],
+      entryYaw: -90,
+      room: { radius: 3.5, ceiling: 2.6 },
+      hotspots: [{ kind: 'nav', to: 'pool', yaw: 30, pitch: -12, label: 'Indoor Pool' }],
     },
     {
       id: 'suite',
@@ -284,10 +304,11 @@ const coastal: PropertyTour = {
       pano: 'relax_inn_seaview_suite',
       floor: 2,
       plan: { x: 0.74, y: 0.4 },
-      entryYaw: 10,
+      entryYaw: -45,
+      room: { radius: 5, ceiling: 2.7 },
       hotspots: [
-        { kind: 'nav', to: 'balcony', yaw: 48, pitch: -10, label: 'Ocean Balcony' },
-        { kind: 'nav', to: 'living', yaw: -132, pitch: -24, label: 'Downstairs — Living Pavilion' },
+        { kind: 'nav', to: 'balcony', yaw: -45, pitch: -11, label: 'Ocean Balcony' },
+        { kind: 'nav', to: 'living', yaw: 93, pitch: -14, label: 'Downstairs — Living Pavilion' },
       ],
     },
     {
@@ -296,9 +317,10 @@ const coastal: PropertyTour = {
       pano: 'sundowner_deck',
       floor: 1,
       plan: { x: 0.84, y: 0.64 },
-      entryYaw: -6,
+      entryYaw: -60,
+      room: { radius: 7, ceiling: 2.9 },
       hotspots: [
-        { kind: 'nav', to: 'living', yaw: 166, pitch: -16, label: 'Living Pavilion' },
+        { kind: 'nav', to: 'living', yaw: -165, pitch: -12, label: 'Living Pavilion' },
         {
           kind: 'info',
           yaw: 24,
@@ -315,7 +337,8 @@ const coastal: PropertyTour = {
       floor: 2,
       plan: { x: 0.93, y: 0.3 },
       entryYaw: 0,
-      hotspots: [{ kind: 'nav', to: 'suite', yaw: -150, pitch: -15, label: 'Seaview Suite' }],
+      room: { outdoor: true, radius: 8 },
+      hotspots: [{ kind: 'nav', to: 'suite', yaw: -175, pitch: -12, label: 'Seaview Suite' }],
     },
   ],
 };
@@ -337,13 +360,14 @@ const penthouse: PropertyTour = {
       pano: 'reading_room',
       floor: 1,
       plan: { x: 0.2, y: 0.62 },
-      entryYaw: 0,
+      entryYaw: -54,
+      room: { radius: 6.5, ceiling: 3.2 },
       hotspots: [
-        { kind: 'nav', to: 'lounge', yaw: 46, pitch: -13, label: 'Sky Lounge' },
+        { kind: 'nav', to: 'lounge', yaw: -54, pitch: -9, label: 'Sky Lounge' },
         {
           kind: 'info',
-          yaw: -56,
-          pitch: -2,
+          yaw: 159,
+          pitch: -6,
           label: 'Millwork study',
           body: 'Full-height rift oak shelving with integrated lighting and a concealed service bar.',
         },
@@ -355,12 +379,13 @@ const penthouse: PropertyTour = {
       pano: 'cayley_interior',
       floor: 1,
       plan: { x: 0.44, y: 0.5 },
-      entryYaw: -14,
+      entryYaw: -100,
+      room: { radius: 5, ceiling: 2.7 },
       hotspots: [
-        { kind: 'nav', to: 'library', yaw: -142, pitch: -15, label: 'Library' },
-        { kind: 'nav', to: 'guest', yaw: -58, pitch: -12, label: 'Guest Suite' },
-        { kind: 'nav', to: 'club', yaw: 62, pitch: -12, label: 'Club Room' },
-        { kind: 'nav', to: 'rooftop', yaw: 136, pitch: 10, label: 'Up — Rooftop Terrace' },
+        { kind: 'nav', to: 'library', yaw: 122, pitch: -12, label: 'Library' },
+        { kind: 'nav', to: 'guest', yaw: 85, pitch: -12, label: 'Guest Suite' },
+        { kind: 'nav', to: 'club', yaw: 152, pitch: -10, label: 'Club Room' },
+        { kind: 'nav', to: 'rooftop', yaw: -100, pitch: 5, label: 'Up — Rooftop Terrace' },
       ],
     },
     {
@@ -370,7 +395,8 @@ const penthouse: PropertyTour = {
       floor: 1,
       plan: { x: 0.3, y: 0.28 },
       entryYaw: 0,
-      hotspots: [{ kind: 'nav', to: 'lounge', yaw: 128, pitch: -14, label: 'Sky Lounge' }],
+      room: { radius: 3.8, ceiling: 2.7 },
+      hotspots: [{ kind: 'nav', to: 'lounge', yaw: 137, pitch: -12, label: 'Sky Lounge' }],
     },
     {
       id: 'club',
@@ -379,8 +405,9 @@ const penthouse: PropertyTour = {
       floor: 1,
       plan: { x: 0.62, y: 0.66 },
       entryYaw: 6,
+      room: { radius: 8, ceiling: 4 },
       hotspots: [
-        { kind: 'nav', to: 'lounge', yaw: -128, pitch: -14, label: 'Sky Lounge' },
+        { kind: 'nav', to: 'lounge', yaw: 125, pitch: -10, label: 'Sky Lounge' },
         {
           kind: 'info',
           yaw: 40,
@@ -397,9 +424,10 @@ const penthouse: PropertyTour = {
       floor: 2,
       plan: { x: 0.78, y: 0.4 },
       entryYaw: 0,
+      room: { outdoor: true },
       hotspots: [
-        { kind: 'nav', to: 'lounge', yaw: -150, pitch: -26, label: 'Down — Sky Lounge' },
-        { kind: 'nav', to: 'skyline', yaw: 52, pitch: -10, label: 'Skyline Balcony' },
+        { kind: 'nav', to: 'lounge', yaw: -136, pitch: -8, label: 'Down — Sky Lounge' },
+        { kind: 'nav', to: 'skyline', yaw: 30, pitch: -12, label: 'Skyline Balcony' },
       ],
     },
     {
@@ -409,7 +437,8 @@ const penthouse: PropertyTour = {
       floor: 2,
       plan: { x: 0.92, y: 0.62 },
       entryYaw: 0,
-      hotspots: [{ kind: 'nav', to: 'rooftop', yaw: -140, pitch: -14, label: 'Rooftop Terrace' }],
+      room: { outdoor: true },
+      hotspots: [{ kind: 'nav', to: 'rooftop', yaw: -165, pitch: -12, label: 'Rooftop Terrace' }],
     },
   ],
 };
@@ -424,7 +453,7 @@ export const toursBySlug: Record<string, PropertyTour> = {
   '11966-rockview-point-street-las-vegas': penthouse,
 };
 
-export const fallbackTours = [telluride, coastal, penthouse];
+export const fallbackTours = Object.values(toursBySlug);
 
 export function getTour(slug: string, index = 0): PropertyTour {
   return toursBySlug[slug] ?? fallbackTours[index % fallbackTours.length];

@@ -335,6 +335,64 @@
     @apply bg-white text-neutral-900 hover:bg-white hover:text-neutral-900;
   }
 
+  /* Walk waypoint: a ring lying on the floor where the next room begins. The
+     tilt comes from the marker's pitch, so nearer rings lie less flat. */
+  .tour-waypoint {
+    @apply relative flex flex-col items-center outline-none;
+  }
+
+  .tour-waypoint-disc {
+    @apply relative block h-16 w-16 rounded-full border-[3px] border-white/90 transition-colors duration-200;
+    background: radial-gradient(
+      circle,
+      rgba(255, 255, 255, 0.55) 0 17%,
+      rgba(255, 255, 255, 0.14) 18% 100%
+    );
+    transform: perspective(360px) rotateX(var(--tilt, 60deg));
+    box-shadow:
+      0 0 24px rgba(0, 0, 0, 0.35),
+      inset 0 0 12px rgba(255, 255, 255, 0.25);
+  }
+
+  .tour-waypoint-disc::after {
+    content: '';
+    @apply absolute inset-0 animate-hotspot-pulse rounded-full border-2 border-white/70;
+  }
+
+  .tour-waypoint-stairs {
+    @apply relative flex h-11 w-11 items-center justify-center rounded-full border-2 border-white/90 bg-white/20 text-white backdrop-blur-sm transition-colors duration-200;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  }
+
+  .tour-waypoint-label {
+    @apply mt-1 whitespace-nowrap rounded-full bg-ink-950/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/90 opacity-80 backdrop-blur-sm transition-colors;
+  }
+
+  .tour-waypoint:hover .tour-waypoint-disc,
+  .tour-waypoint:focus-visible .tour-waypoint-disc {
+    @apply border-gold-400;
+    background: radial-gradient(
+      circle,
+      rgba(197, 168, 105, 0.8) 0 17%,
+      rgba(197, 168, 105, 0.3) 18% 100%
+    );
+  }
+
+  .tour-waypoint:hover .tour-waypoint-stairs,
+  .tour-waypoint:focus-visible .tour-waypoint-stairs {
+    @apply border-gold-400 bg-gold-500/40;
+  }
+
+  .tour-waypoint:hover .tour-waypoint-label,
+  .tour-waypoint:focus-visible .tour-waypoint-label {
+    @apply bg-gold-500 text-ink-900 opacity-100;
+  }
+
+  /* The route being walked, drawn as marching dashes on the floor plan. */
+  .tour-route-flow {
+    animation: tour-route-flow 0.9s linear infinite;
+  }
+
   .skeleton {
     position: relative;
     overflow: hidden;
@@ -367,6 +425,12 @@
 
   .text-balance {
     text-wrap: balance;
+  }
+}
+
+@keyframes tour-route-flow {
+  to {
+    stroke-dashoffset: -28;
   }
 }
 
