@@ -72,13 +72,23 @@ system above. `tailwind.config.ts` still carries the `brand.*` / `luxury.*` /
 
 `components/tour/panorama-engine.ts` is plain `three.js`, deliberately not
 React-reconciled: the render loop owns its own state and only pushes projected
-hotspot positions back to React. Do not move view state into React — dragging
-would then re-render the 3D layer every frame.
+hotspot positions and walk events back to React. Per-frame values (heading, leg
+progress, speed, pointer) reach the chrome as CSS custom properties on the
+viewer (`--tour-yaw`, `--tour-leg`, `--tour-speed`, `--tour-px/py`). Do not move
+view state into React — dragging or walking would then re-render every frame.
+
+Moving between rooms is always a walk. Panoramas are projected onto a proxy of
+their room (`room` on the node), which is what lets the camera travel through a
+doorway; any room choice — hotspot, floor click, filmstrip, floor plan,
+dollhouse, number key — goes through `engine.walkTo`, which routes along the nav
+graph and walks it leg by leg. Do not add a path that swaps panoramas directly.
 
 Tour scene graphs are hand-authored in `lib/data/tours.ts`. Nav hotspots are the
-single source of truth for the walk graph; the floor plan, dollhouse and minimap
-all derive their edges from them, so adding a route means adding a hotspot, not
-editing a map.
+single source of truth for the walk graph; routes, the guided tour, room
+outlines, the floor plan, the 3D dollhouse (`dollhouse-engine.ts`) and the
+minimap all derive from them via `lib/tour-graph.ts`, so adding a route means
+adding a hotspot, not editing a map. Aim nav hotspots at the doorway they lead
+through and keep links two-way — the hotspot back sets the arrival heading.
 
 Matterport and Street View are adapters (`MatterportEmbed`, `StreetViewEmbed`)
 that sit beside the built-in engine, not replacements. Both degrade to a link
@@ -86,7 +96,8 @@ when unconfigured — keep that behaviour when touching them.
 
 ## Assets
 
-`public/panoramas/` holds 22 CC0 equirectangular captures, each as
+`public/panoramas/` holds 85 CC0 equirectangular captures (20 houses, each
+capture used once), each as
 `<name>.jpg` (4096×2048) and `<name>-preview.jpg` (1024×512). The viewer loads
 the preview first, so both files must exist for every `pano` referenced by a
 tour node.

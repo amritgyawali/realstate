@@ -1,4 +1,5 @@
 import type { PropertyTour } from '@/lib/types';
+import { estateTours } from '@/lib/data/estate-tours';
 
 /**
  * Tour scene graphs.
@@ -444,13 +445,16 @@ const penthouse: PropertyTour = {
 };
 
 /**
- * Tours keyed by property slug. Listings without an entry here fall back to the
- * shared demo walkthrough so every `hasTour` card still opens something real.
+ * Tours keyed by property slug: the three original walkthroughs plus one house
+ * per remaining tour-enabled listing (lib/data/estate-tours.ts). Listings
+ * without an entry fall back to one of these, so every `hasTour` card still
+ * opens something real.
  */
 export const toursBySlug: Record<string, PropertyTour> = {
   '747-w-pacific-avenue-unit-540-telluride': telluride,
   'cala-vinyes-spain': coastal,
   '11966-rockview-point-street-las-vegas': penthouse,
+  ...Object.fromEntries(estateTours),
 };
 
 export const fallbackTours = Object.values(toursBySlug);
