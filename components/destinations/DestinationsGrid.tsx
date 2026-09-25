@@ -5,21 +5,8 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import type { Destination } from '@/lib/types';
 
-const REGION_GROUPS: { heading: string; regions: string[] }[] = [
-  { heading: 'Americas', regions: ['North America', 'Caribbean', 'Central America'] },
-  { heading: 'Europe', regions: ['Western Europe', 'Northern Europe', 'Southern Europe'] },
-  { heading: 'South Pacific', regions: ['Australia & New Zealand'] },
-  { heading: 'Asia', regions: ['South-Eastern Asia'] },
-  { heading: 'Middle East', regions: ['United Arab Emirates', 'Israel'] },
-];
-
-const REGION_OF: Record<string, string> = {
-  Americas: 'Americas',
-  Caribbean: 'Caribbean',
-  Europe: 'Europe',
-  'South Pacific': 'South Pacific',
-  'Middle East': 'Middle East',
-};
+/** Destinations are grouped by country; `Destination.region` holds the country. */
+const COUNTRIES = ['Nepal', 'India'];
 
 const PER_PAGE = 12;
 
@@ -34,14 +21,7 @@ export function DestinationsGrid({ destinations }: { destinations: Destination[]
     return destinations.filter((destination) => {
       if (needle && !`${destination.name} ${destination.description}`.toLowerCase().includes(needle))
         return false;
-      if (selected.length) {
-        const headings = selected
-          .map((region) =>
-            REGION_GROUPS.find((group) => group.regions.includes(region))?.heading ?? region,
-          )
-          .map((heading) => REGION_OF[heading] ?? heading);
-        if (!headings.includes(destination.region)) return false;
-      }
+      if (selected.length && !selected.includes(destination.region)) return false;
       return true;
     });
   }, [destinations, text, selected]);
@@ -50,9 +30,9 @@ export function DestinationsGrid({ destinations }: { destinations: Destination[]
   const safePage = Math.min(page, pageCount);
   const pageItems = results.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
 
-  const toggle = (region: string) => {
+  const toggle = (country: string) => {
     setSelected((current) =>
-      current.includes(region) ? current.filter((item) => item !== region) : [...current, region],
+      current.includes(country) ? current.filter((item) => item !== country) : [...current, country],
     );
     setPage(1);
   };
@@ -99,26 +79,24 @@ export function DestinationsGrid({ destinations }: { destinations: Destination[]
           </button>
         </div>
 
-        {REGION_GROUPS.map((group) => (
-          <div key={group.heading} className="mb-5">
-            <h3 className="mb-2 border-b border-gray-200 pb-1 text-[13px] font-bold text-gray-800">
-              {group.heading}
-            </h3>
-            <div className="space-y-1.5 text-[11px] text-gray-600">
-              {group.regions.map((region) => (
-                <label key={region} className="flex cursor-pointer items-center gap-1.5">
-                  <input
-                    type="checkbox"
-                    className="custom-checkbox h-3 w-3 border-gray-300 text-slate-800"
-                    checked={selected.includes(region)}
-                    onChange={() => toggle(region)}
-                  />
-                  <span>{region}</span>
-                </label>
-              ))}
-            </div>
+        <div className="mb-5">
+          <h3 className="mb-2 border-b border-gray-200 pb-1 text-[13px] font-bold text-gray-800">
+            Country
+          </h3>
+          <div className="space-y-1.5 text-[11px] text-gray-600">
+            {COUNTRIES.map((country) => (
+              <label key={country} className="flex cursor-pointer items-center gap-1.5">
+                <input
+                  type="checkbox"
+                  className="custom-checkbox h-3 w-3 border-gray-300 text-slate-800"
+                  checked={selected.includes(country)}
+                  onChange={() => toggle(country)}
+                />
+                <span>{country}</span>
+              </label>
+            ))}
           </div>
-        ))}
+        </div>
       </aside>
 
       <div className="min-w-0 flex-1">
@@ -143,7 +121,8 @@ export function DestinationsGrid({ destinations }: { destinations: Destination[]
                     className="object-cover object-center transition-transform duration-500 group-hover:scale-105"
                   />
                   <span className="absolute right-2 top-2 rounded-full bg-black/65 px-2 py-0.5 text-[9.5px] font-semibold text-white backdrop-blur-sm">
-                    {destination.listingCount.toLocaleString('en-US')} listings
+                    {destination.listingCount.toLocaleString('en-US')}{' '}
+                    {destination.listingCount === 1 ? 'listing' : 'listings'}
                   </span>
                 </div>
                 <div className="p-4">

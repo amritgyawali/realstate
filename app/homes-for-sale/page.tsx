@@ -9,7 +9,7 @@ import { properties } from '@/lib/data/properties';
 export const metadata: Metadata = {
   title: 'Homes For Sale',
   description:
-    'Search luxury homes for sale worldwide — filter by price, bedrooms, characteristics and 3D/360° tour availability.',
+    'Search houses and villas for sale in Nepal and India — filter by price, bedrooms, characteristics and 3D/360° tour availability.',
 };
 
 export default function HomesForSalePage() {

@@ -5,6 +5,12 @@ A Next.js implementation of the LuxuryRealEstate.com design system, built around
 from the street through the front door and on through every room and up the
 stairs, in the browser, on any device, with no plugin and no third-party account.
 
+The portfolio is houses and villas in **Nepal and India**. Every listing has a
+3D/360° walkover, and the flagship — the Phewa Lakeside Villa in Pokhara — is
+ten 360° captures of one estate walked as a single house: lounge, dining hall,
+lake veranda, jetty, lakeshore, billiard room, games room, fireside pavilion,
+ridge lookout and squash court.
+
 The UI is a faithful build of the eight reference screens in the repository root
 (`luxury_real_estate_*/code.html` plus `sovereign_estate_system/DESIGN.md`) —
 same layout, same type scale, same spacing, same colour values — with the static
@@ -41,7 +47,8 @@ single 3D scene and moves the camera through it continuously, the way a person
 walks it:
 
 1. **The whole building first.** The tour opens outside, on a modelled house in
-   its setting: snowy valley, coastline or desert.
+   its setting: Himalayan foothills (optionally on a lakeshore), tropical
+   paddy country, coastline, desert or a snowy valley.
 2. **Up to the entrance.** *Walk to the entrance* flies down to the pavement and
    walks up the garden path, step by step, to the porch. The front door swings
    open as you arrive.
@@ -123,10 +130,20 @@ Saved board counts rooms walked.
 
 ### Panorama assets
 
-22 CC0 equirectangular captures live in `public/panoramas/`, each stored twice:
+31 CC0 equirectangular captures live in `public/panoramas/`, each stored twice:
 `<name>.jpg` at 4096×2048 and `<name>-preview.jpg` at 1024×512. They are sourced
-from [Poly Haven](https://polyhaven.com) (CC0) and tone-mapped down from the 8K
-originals.
+from [Poly Haven](https://polyhaven.com) (CC0) and downsized from Poly Haven's
+tone-mapped 8K JPEGs.
+
+Ten of them are one property, all shot within a few hundred metres of each
+other, and make up the Phewa Lakeside Villa: `warm_bar`, `warm_restaurant`,
+`qwantani_patio`, `small_harbour_morning`, `lakeside`, `billiard_hall`,
+`empty_play_room`, `boma`, `qwantani_afternoon` and `squash_court`.
+
+Listing galleries use flat views cut from the same panoramas
+(`public/listings/views/`). Exterior photographs of the houses come from
+Wikimedia Commons under CC BY / CC BY-SA and carry their attribution in each
+listing's `credits`, shown under the property page.
 
 To swap in real captures, drop a 2:1 equirectangular JPEG pair into
 `public/panoramas/` and reference the basename from a space's `pano` field. The
@@ -159,15 +176,16 @@ doors: [
   { a: 'entry', b: 'great', x: 0, z: -2.0, width: 1.4 },
 ],
 stairs: [{ from: 'stairs', to: 'landing', run: { x: -6.2, z: -1.0, w: 1.2, d: 3.6 }, ascent: 's' }],
-site: { setting: 'alpine', facade: 'timber', storey: 3.3, plinth: 0.6, approach: [/* street → porch */] },
+site: { setting: 'himalayan', waterside: true, facade: 'stone', storey: 3.8, plinth: 0.45, approach: [/* street → porch */] },
 ```
 
 Doors are the single source of truth for where a visitor can go. The walk
 graph, floor plan, dollhouse and minimap all derive their routes from them.
 Hotspot yaw/pitch are in the photo's own frame (degrees, clockwise from the
-photo's forward). Map the tour to a listing in `toursBySlug`; listings without an
-entry fall back to one of the three demo houses, so no `hasTour` card ever opens
-an empty viewer.
+photo's forward). There are four models — the lakeside villa, a timber hill
+house, a garden villa and a haveli. Map one to a listing in `toursBySlug`, via
+`variant()` to retitle it and set its landscape; listings without an entry fall
+back to one of the four, so no `hasTour` card ever opens an empty viewer.
 
 ### Other providers
 
@@ -203,8 +221,9 @@ All 48 listing pages and 24 tour pages are statically generated at build time.
 
 The reference screens are static. These were added to make the site work:
 
-- **Natural-language search.** "5 bed ski property in Colorado under $3m with a
-  3d tour" parses into structured filters. One parser
+- **Natural-language search.** "lakeside villa in Pokhara with a 3d tour" parses
+  into structured filters (province, state and district names resolve to a
+  region). One parser
   ([`lib/smart-search.ts`](lib/smart-search.ts)) serves the hero console, the
   command palette and both listing pages, and each surface shows how the query
   was read as chips before you commit to it.
@@ -214,7 +233,8 @@ The reference screens are static. These were added to make the site work:
   query string, so a filtered view is linkable and survives a refresh.
 - **Map view.** Inline SVG plate-carrée world map with price markers — no tile
   provider, no key, no third-party request.
-- **Currency switcher** with live conversion across every price on the page.
+- **Currency switcher.** Prices show in the listing's own currency (NPR or INR,
+  grouped in lakhs and crores) until a display currency is chosen.
 - **Favourites, compare tray and saved searches**, persisted locally.
 - **Lead capture** posting to `/api/inquiries` with server-side validation.
 - `sitemap.xml`, `robots.txt`, per-listing OpenGraph metadata, skip link,
@@ -241,13 +261,15 @@ lib/
   smart-search.ts         Query parser + filter/sort engine
   format.ts               Currency conversion and display
   store.ts                Persisted session state (zustand)
-public/panoramas/         22 equirectangular captures, full + preview
+public/panoramas/         31 equirectangular captures, full + preview
+public/listings/          Listing exteriors (Commons) + views cut from the panoramas
 scripts/                  exFAT readlink shim + Next launcher (see below)
 ```
 
-Content in `lib/data/` was transcribed from the reference mockups — titles,
-locations, prices, bed/bath counts, agencies, Regents badges, press copy and the
-About milestones are the source screens' own values.
+Listings, agents and destinations in `lib/data/` are sample Nepal and India
+content: towns and coordinates are real, while prices, agents (example.com
+contacts, no portraits) and floor areas are illustrative. Press copy and the
+About milestones are still the reference mockups' own values.
 
 ---
 
@@ -278,7 +300,9 @@ plain `next dev` / `next build` / `next start`.
 ## Credits
 
 - Panoramas: [Poly Haven](https://polyhaven.com) (CC0)
-- Listing, portrait and destination photography: the reference mockups
+- Listing exteriors: Wikimedia Commons contributors, CC BY / CC BY-SA, credited
+  per listing (`credits` in `lib/data/properties.ts`, shown on the property page)
+- Room views, hero and destination images: cut from the Poly Haven panoramas
 - Fonts: Playfair Display, Montserrat, Cinzel (Google Fonts, self-hosted via
   `next/font`)
 - Icons: Font Awesome Free 6

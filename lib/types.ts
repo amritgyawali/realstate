@@ -1,4 +1,4 @@
-export type Currency = 'USD' | 'EUR' | 'CAD' | 'SEK' | 'GBP' | 'AED' | 'CHF';
+export type Currency = 'NPR' | 'INR' | 'USD' | 'EUR' | 'GBP' | 'AED';
 
 export type ListingStatus = 'Active' | 'Pending' | 'Auction' | 'New' | 'Sold';
 
@@ -90,8 +90,13 @@ export interface TourStair {
 }
 
 export interface TourSite {
-  /** Landscape and sky treatment around the house. */
-  setting: 'alpine' | 'coastal' | 'desert';
+  /**
+   * Landscape and sky treatment around the house. `himalayan` is green foothills
+   * under a snow-capped range; `tropical` is palms and paddy with no sea.
+   */
+  setting: 'alpine' | 'coastal' | 'desert' | 'himalayan' | 'tropical';
+  /** Adds a shoreline and open water around the grounds (a lake or a river bank). */
+  waterside?: boolean;
   /** Facade treatment for the modelled exterior. */
   facade: 'timber' | 'stucco' | 'stone';
   /** Floor-to-floor height in metres. */
@@ -179,6 +184,18 @@ export interface Property {
   lng: number;
   listedOn: string;
   tour?: PropertyTour;
+  /** Attribution for photographs that are not CC0, shown under the gallery. */
+  credits?: PhotoCredit[];
+}
+
+export interface PhotoCredit {
+  /** Published path of the photograph this credit covers. */
+  image: string;
+  author: string;
+  license: string;
+  licenseUrl: string;
+  /** Where the original was published. */
+  source: string;
 }
 
 export interface Destination {

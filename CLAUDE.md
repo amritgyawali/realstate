@@ -54,8 +54,13 @@ system above. `tailwind.config.ts` still carries the `brand.*` / `luxury.*` /
 
 ## Conventions
 
-- Data lives in `lib/data/*.ts` as plain typed arrays, transcribed from the
-  mockups. Do not fabricate listing content; take it from the source screens.
+- Data lives in `lib/data/*.ts` as plain typed arrays. Listings are houses and
+  villas in Nepal and India only: real towns and coordinates, illustrative
+  prices and agents (example.com contacts, no portraits). Every listing has a
+  tour. Exterior photos are Wikimedia Commons (CC BY / CC BY-SA) and must carry a
+  `credits` entry; avoid photos that show identifiable people or a named real
+  property. Anywhere without a visible credit (hero, destinations, cards on the
+  homepage) uses views cut from the CC0 panoramas in `public/listings/views/`.
 - Shared types are in `lib/types.ts`. Add to that file rather than declaring
   listing/agent/tour shapes locally.
 - All filtering and sorting goes through `lib/smart-search.ts`. The hero console,
@@ -64,7 +69,10 @@ system above. `tailwind.config.ts` still carries the `brand.*` / `luxury.*` /
 - Filter state belongs in the URL (`ListingBrowser` owns this), so views are
   linkable and survive a refresh.
 - Prices render through `lib/format.ts` so the currency switcher affects every
-  price at once. `price: 0` means "Price Upon Request" — do not treat it as free.
+  price at once. Listings are priced in NPR or INR and shown in their own
+  currency (lakh/crore grouping) until a display currency is picked; the store's
+  `currency` is `null` for that. `price: 0` means "Price Upon Request" — do not
+  treat it as free.
 - Persisted client state (favourites, compare, currency, visited rooms) lives in
   `lib/store.ts`. Components that read it must tolerate the pre-hydration render.
 
@@ -89,7 +97,12 @@ number keys) walks the route there.
 - `lib/tour/layout.ts` (plan geometry) and `lib/tour/walk-graph.ts` (stops and
   shortest paths) are pure TypeScript shared by the engine and `FloorPlan`.
 
-Tours are small architectural models in `lib/data/tours.ts`: spaces with `rect`,
+Tours are small architectural models in `lib/data/tours.ts`. There are four —
+the ten-capture Phewa Lakeside Villa (one real property, single level), a timber
+hill house, a garden villa and a haveli — and each listing takes one through
+`variant()`, which retitles it and sets its `site.setting` (`himalayan`,
+`tropical`, `coastal`, `desert`, `alpine`; `waterside` adds a shoreline). Models
+are spaces with `rect`,
 `capture`, `heading`, plus `doors`, `stairs` and a `site` with the street-to-porch
 `approach`. Doors are the single source of truth for the walk graph; the floor
 plan, dollhouse and minimap all derive their routes from them, so adding a route
@@ -104,7 +117,7 @@ when unconfigured — keep that behaviour when touching them.
 
 ## Assets
 
-`public/panoramas/` holds 22 CC0 equirectangular captures, each as
+`public/panoramas/` holds 31 CC0 equirectangular captures, each as
 `<name>.jpg` (4096×2048) and `<name>-preview.jpg` (1024×512). The viewer loads
 the preview first, so both files must exist for every `pano` referenced by a
 tour space.

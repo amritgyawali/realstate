@@ -10,11 +10,11 @@ import { properties } from '@/lib/data/properties';
 export const metadata: Metadata = {
   title: 'Destinations',
   description:
-    'Explore noteworthy cities, coastlines and mountain regions, and the luxury homes for sale in each.',
+    'Provinces of Nepal and states of India, and the houses and villas for sale in each — all walkable in 3D/360°.',
 };
 
 export default function DestinationsPage() {
-  const hero = destinations.find((d) => d.name === 'Mexico') ?? destinations[0];
+  const hero = destinations[0];
   const spotlight = properties.filter((p) => p.hasTour).slice(0, 3);
 
   return (

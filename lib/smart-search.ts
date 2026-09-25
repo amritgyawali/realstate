@@ -41,94 +41,80 @@ const MULTIPLIERS: Record<string, number> = { k: 1e3, m: 1e6, b: 1e9 };
  * whole rather than leaving a stray "view" behind for the keyword pass.
  */
 const TAG_SYNONYMS: Record<string, string> = {
-  'skyline view': 'Skyline View',
-  'water view': 'Water View',
   'mountain view': 'Mountain View',
   'river view': 'River View',
-  'ocean view': 'Ocean',
-  'new construction': 'New Construction',
-  'golf course': 'Golf Course',
-  'wine country': 'Wine Country',
-  'country club': 'Country Club Comm',
-  'private island': 'Private Islands',
-  'bed and breakfast': 'Bed and Breakfast',
-  ski: 'Ski Property',
-  skiing: 'Ski Property',
-  slopes: 'Ski Property',
-  beach: 'Beachfront',
-  beachfront: 'Beachfront',
-  oceanfront: 'Ocean',
-  ocean: 'Ocean',
-  sea: 'Ocean',
-  waterfront: 'Waterfront',
-  lake: 'Lake',
+  'country home': 'Country Home',
+  'heritage home': 'Historic',
   lakefront: 'Lake',
+  lakeside: 'Lake',
+  lake: 'Lake',
+  waterfront: 'Waterfront',
+  riverside: 'River View',
   river: 'River View',
-  golf: 'Golf Course',
-  equestrian: 'Equestrian',
-  horse: 'Equestrian',
-  ranch: 'Equestrian',
-  vineyard: 'Wine Country',
-  wine: 'Wine Country',
-  historic: 'Historic',
-  island: 'Island',
-  desert: 'Desert',
+  beach: 'Waterfront',
+  himalaya: 'Mountain View',
+  himalayan: 'Mountain View',
+  himalayas: 'Mountain View',
   mountain: 'Mountain View',
   mountains: 'Mountain View',
-  skyline: 'Skyline View',
-  city: 'In-City',
-  downtown: 'In-City',
+  hills: 'Mountain View',
+  heritage: 'Historic',
+  historic: 'Historic',
+  traditional: 'Historic',
+  desert: 'Desert',
   tropical: 'Tropical',
-  newbuild: 'New Construction',
-  auction: 'Auction',
+  palms: 'Tropical',
+  city: 'In-City',
+  suburban: 'Suburban Home',
+  countryside: 'Country Home',
+  village: 'Country Home',
 };
 
 const TYPE_SYNONYMS: Record<string, string> = {
-  condo: 'Condominium',
-  condominium: 'Condominium',
-  apartment: 'Condominium',
-  penthouse: 'Penthouse',
-  townhouse: 'Townhouse',
-  townhome: 'Townhouse',
   villa: 'Villa',
-  estate: 'Estate',
+  villas: 'Villa',
+  bungalow: 'Villa',
+  haveli: 'Haveli',
+  havelis: 'Haveli',
+  farmhouse: 'Farmhouse',
+  farm: 'Farmhouse',
   house: 'Single Family',
-  home: 'Single Family',
-  land: 'Lots & Land',
-  lot: 'Lots & Land',
-  farm: 'Farm & Ranch',
-  ranch: 'Farm & Ranch',
+  houses: 'Single Family',
 };
 
 /**
- * Listings store the region as a postal abbreviation ("CO"), but people type the
- * state name. Resolving here means "in Colorado" narrows to the right listings
- * instead of falling through to a keyword search that matches nothing.
+ * People type the province, state or district; listings store the province or
+ * state in `region`. Resolving here means "in Goa" narrows to Goa instead of
+ * falling through to a keyword search.
  */
-const US_STATES: Record<string, string> = {
-  alabama: 'AL', alaska: 'AK', arizona: 'AZ', arkansas: 'AR', california: 'CA',
-  colorado: 'CO', connecticut: 'CT', delaware: 'DE', florida: 'FL', georgia: 'GA',
-  hawaii: 'HI', idaho: 'ID', illinois: 'IL', indiana: 'IN', iowa: 'IA',
-  kansas: 'KS', kentucky: 'KY', louisiana: 'LA', maine: 'ME', maryland: 'MD',
-  massachusetts: 'MA', michigan: 'MI', minnesota: 'MN', mississippi: 'MS',
-  missouri: 'MO', montana: 'MT', nebraska: 'NE', nevada: 'NV',
-  'new hampshire': 'NH', 'new jersey': 'NJ', 'new mexico': 'NM', 'new york': 'NY',
-  'north carolina': 'NC', 'north dakota': 'ND', ohio: 'OH', oklahoma: 'OK',
-  oregon: 'OR', pennsylvania: 'PA', 'rhode island': 'RI', 'south carolina': 'SC',
-  'south dakota': 'SD', tennessee: 'TN', texas: 'TX', utah: 'UT', vermont: 'VT',
-  virginia: 'VA', washington: 'WA', 'west virginia': 'WV', wisconsin: 'WI',
-  wyoming: 'WY',
+const REGIONS: Record<string, { region: string; country: string; city?: string }> = {
+  gandaki: { region: 'Gandaki', country: 'Nepal' },
+  pokhara: { region: 'Gandaki', country: 'Nepal', city: 'Pokhara' },
+  kaski: { region: 'Gandaki', country: 'Nepal' },
+  mustang: { region: 'Gandaki', country: 'Nepal' },
+  parbat: { region: 'Gandaki', country: 'Nepal' },
+  bagmati: { region: 'Bagmati', country: 'Nepal' },
+  kathmandu: { region: 'Bagmati', country: 'Nepal', city: 'Kathmandu' },
+  bhaktapur: { region: 'Bagmati', country: 'Nepal' },
+  lalitpur: { region: 'Bagmati', country: 'Nepal' },
+  karnali: { region: 'Karnali', country: 'Nepal' },
+  surkhet: { region: 'Karnali', country: 'Nepal' },
+  goa: { region: 'Goa', country: 'India' },
+  himachal: { region: 'Himachal Pradesh', country: 'India' },
+  'himachal pradesh': { region: 'Himachal Pradesh', country: 'India' },
+  kangra: { region: 'Himachal Pradesh', country: 'India' },
+  rajasthan: { region: 'Rajasthan', country: 'India' },
+  shekhawati: { region: 'Rajasthan', country: 'India' },
+  jhunjhunu: { region: 'Rajasthan', country: 'India' },
+  'tamil nadu': { region: 'Tamil Nadu', country: 'India' },
+  erode: { region: 'Tamil Nadu', country: 'India' },
 };
 
 const COUNTRY_ALIASES: Record<string, string> = {
-  usa: 'United States',
-  us: 'United States',
-  america: 'United States',
-  uk: 'United Kingdom',
-  britain: 'United Kingdom',
-  england: 'United Kingdom',
-  holland: 'Netherlands',
-  uae: 'United Arab Emirates',
+  nepal: 'Nepal',
+  nepali: 'Nepal',
+  india: 'India',
+  indian: 'India',
 };
 
 function parseAmount(raw: string): number | undefined {
@@ -141,9 +127,8 @@ function parseAmount(raw: string): number | undefined {
 }
 
 /**
- * Turns a sentence into filters: "5 bed ski property in Colorado under $3m with
- * a 3d tour" becomes beds >= 5, tag Ski Property, region Colorado, maxPrice 3e6,
- * requireTour. Whatever the parser cannot claim stays in `text` for the keyword
+ * Turns a sentence into filters: "4 bed villa in Goa under $2m with a 3d tour"
+ * becomes beds >= 4, type Villa, region Goa, maxPrice 2e6, requireTour. Whatever the parser cannot claim stays in `text` for the keyword
  * pass, so nothing typed is ever silently dropped.
  */
 export function parseSmartQuery(input: string, base: SearchQuery = EMPTY_QUERY): SearchQuery {
@@ -201,11 +186,14 @@ export function parseSmartQuery(input: string, base: SearchQuery = EMPTY_QUERY):
     rest = rest.replace(/\bopen house\b/gi, ' ');
   }
 
-  for (const [name, code] of Object.entries(US_STATES)) {
+  // Longest names first, so "himachal pradesh" is claimed before "himachal".
+  const regionNames = Object.keys(REGIONS).sort((a, b) => b.length - a.length);
+  for (const name of regionNames) {
     const pattern = new RegExp(`\\b${name}\\b`, 'i');
     if (pattern.test(rest)) {
-      query.region = code;
-      query.country = query.country ?? 'United States';
+      query.region = REGIONS[name].region;
+      query.country = query.country ?? REGIONS[name].country;
+      if (REGIONS[name].city) query.city = REGIONS[name].city;
       rest = rest.replace(new RegExp(`\\b${name}\\b`, 'gi'), ' ');
       break;
     }
@@ -355,8 +343,8 @@ export function applyQuery(
 
 /**
  * Constraints dropped, in order, when a strict query returns nothing. Least
- * important first: someone who asked for a ski property in Colorado would rather
- * see a four-bedroom than nothing at all, but dropping "Colorado" changes what
+ * important first: someone who asked for a lakeside villa in Pokhara would rather
+ * see a four-bedroom than nothing at all, but dropping "Pokhara" changes what
  * they asked for, so location goes last.
  */
 const RELAXATION_ORDER: { key: keyof SearchQuery | 'tagsTail'; label: string }[] = [

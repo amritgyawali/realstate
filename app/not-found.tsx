@@ -10,7 +10,7 @@ export default function NotFound() {
         <p className="font-crest text-[10px] uppercase tracking-[0.3em] text-[#c5a869]">404</p>
         <h1 className="mt-2 font-serif-title text-3xl text-gray-900">That page has been withdrawn</h1>
         <p className="mx-auto mt-3 max-w-md text-[13px] leading-relaxed text-gray-600">
-          The listing or page you were looking for is no longer available. Search the global
+          The listing or page you were looking for is no longer available. Search the Nepal and India
           portfolio, or step inside one of the 360° walkover tours.
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
