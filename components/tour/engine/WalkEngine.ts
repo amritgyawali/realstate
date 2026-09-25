@@ -11,14 +11,27 @@ import {
   floorElevation,
   hasPano,
   nodeById,
+  proxyDistance,
   rectCentre,
   spaceAt,
   spaceKind,
   stairFor,
   type DoorGeometry,
 } from '@/lib/tour/layout';
-import { buildWalkGraph, findPath, nearestStop, type WalkGraph } from '@/lib/tour/walk-graph';
-import { buildHouse, type HouseBuild, type ProjectionMaterialHost } from './build-house';
+import {
+  buildWalkGraph,
+  findPath,
+  nearestStop,
+  routeWaypoints,
+  type WalkGraph,
+} from '@/lib/tour/walk-graph';
+import {
+  buildDepthMesh,
+  buildHouse,
+  type DepthMeshBuild,
+  type HouseBuild,
+  type ProjectionMaterialHost,
+} from './build-house';
 import { buildEnvironment, type EnvironmentBuild } from './environment';
 import {
   MAX_PORTALS,
@@ -92,7 +105,8 @@ interface Motion {
   cumulative: number[];
   total: number;
   s: number;
-  elapsed: number;
+  /** Current walking speed, m/s — carried over when a walk is re-routed. */
+  speed: number;
   /** Graph stops along the route, with their distance along it. */
   route: { stop: number; at: number }[];
   target: number;
@@ -181,7 +195,8 @@ export class WalkEngine {
   private targetYaw = 0;
   private targetPitch = 0;
   private targetFov = WALK_FOV;
-  private bob = 0;
+  /** Turn rate of the head while walking (deg/s), for a critically damped turn. */
+  private yawSpeed = 0;
 
   // Orbit rig, shared by overview, dollhouse and floor plan.
   private orbit = { target: new THREE.Vector3(), azimuth: 32, elevation: 20, distance: 40, fov: 45 };
@@ -215,6 +230,12 @@ export class WalkEngine {
   private lastMeasureKey = '';
 
   private infoPoints = new Map<string, { point: THREE.Vector3; label: string; body: string }[]>();
+  /** Reconstructed shape of each photographed space, once its depth map loads. */
+  private depth = new Map<string, DepthMeshBuild>();
+  /** Lattice stops that would stand the visitor on a piece of furniture. */
+  private occupied = new Set<number>();
+  /** Photo materials currently sharpening from preview to full resolution. */
+  private blending = new Set<ProjectionMaterial['uniforms']>();
   private lastOverlayKey = '';
   private lastStateKey = '';
   private lastPoseAt = 0;
@@ -322,12 +343,13 @@ export class WalkEngine {
     this.cursor.visible = false;
     this.scene.add(this.cursor);
 
-    this.computeInfoPoints();
+    this.tour.nodes.forEach((node) => this.placeInfoPoints(node));
     this.frameOverview(true);
     this.applyCamera();
     this.applyScene();
     this.renderer.shadowMap.needsUpdate = true;
     this.loadPreviews();
+    this.loadDepthMaps();
 
     this.bindEvents();
     this.loop();
@@ -410,6 +432,7 @@ export class WalkEngine {
     let best = -1;
     let bestScore = Infinity;
     this.graph.adjacency[from].forEach((candidate) => {
+      if (this.occupied.has(candidate)) return;
       const stop = this.graph.stops[candidate];
       const bearing = Math.atan2(stop.x - origin.x, -(stop.z - origin.z)) / DEG;
       const off = Math.abs(angleDelta(bearing, heading));
@@ -647,64 +670,87 @@ export class WalkEngine {
 
   private walkAlong(target: number, faceTravel: boolean, finalYaw: number | null) {
     return new Promise<void>((resolve) => {
-      const start = this.eye.clone().setY(this.eye.y - EYE_HEIGHT - this.bob);
+      const feet = this.eye.clone().setY(this.eye.y - EYE_HEIGHT);
       let from = this.stop;
-      let prefix: THREE.Vector3[] = [];
+      let carried = 0;
+      let lead: THREE.Vector3[] = [];
       if (this.motion) {
-        // Already walking: carry on to the next stop ahead, then re-route from
-        // there, so a change of mind never jerks the camera backwards.
-        const ahead = this.motion.route.find((entry) => entry.at >= this.motion!.s - 0.05);
-        from = ahead ? ahead.stop : this.motion.target;
-        prefix = [start];
-        this.motion.resolve();
+        // Already walking: carry on to the next stop ahead at the same pace,
+        // then re-route from there, so a change of mind never jerks the camera.
+        const motion = this.motion;
+        const ahead = motion.route.find((entry) => entry.at >= motion.s + 0.05);
+        from = ahead ? ahead.stop : motion.target;
+        lead = [feet];
+        carried = motion.speed;
         this.motion = null;
+        motion.resolve();
       }
-      const path = findPath(this.graph, from, target);
+      const path = findPath(this.graph, from, target, this.occupied);
       if (!path) {
         resolve();
         return;
       }
-      const stopPoints = path.map((id) => {
-        const s = this.graph.stops[id];
-        return new THREE.Vector3(s.x, s.y, s.z);
-      });
-      const raw = [...prefix, ...stopPoints];
-      if (raw.length < 2 || raw[0].distanceTo(raw[raw.length - 1]) < 0.02) {
+      // Straighten the route inside each room, cross doorways square through
+      // their centre, then run a centripetal spline through what is left.
+      const controls: THREE.Vector3[] = [];
+      [...lead, ...routeWaypoints(this.tour, this.graph, path).map((p) => new THREE.Vector3(p.x, p.y, p.z))].forEach(
+        (point) => {
+          if (!controls.length || controls[controls.length - 1].distanceTo(point) > 0.05) controls.push(point);
+        },
+      );
+      if (controls.length < 2) {
         this.stop = target;
         if (finalYaw !== null) this.targetYaw = nearestAngle(finalYaw, this.yaw);
         this.emitState();
         resolve();
         return;
       }
-      const points = smoothPath(raw);
+      const curve = new THREE.CatmullRomCurve3(controls, false, 'centripetal', 0.5);
+      const length = curve.getLength();
+      const points = curve.getSpacedPoints(Math.max(8, Math.ceil(length / 0.05)));
       const cumulative = [0];
       for (let i = 1; i < points.length; i += 1) {
         cumulative.push(cumulative[i - 1] + points[i].distanceTo(points[i - 1]));
       }
       const total = cumulative[cumulative.length - 1];
-      // Where each original stop falls along the route, for re-routing.
-      let rawAt = 0;
-      const rawTotal = raw.reduce((sum, p, i) => (i ? sum + p.distanceTo(raw[i - 1]) : 0), 0) || 1;
-      const route = path.map((id, index) => {
-        const i = index + prefix.length;
-        if (i > 0) rawAt += raw[i].distanceTo(raw[i - 1]);
-        return { stop: id, at: (rawAt / rawTotal) * total };
+      // Where each stop of the route falls along the curve, for re-routing.
+      let cursor = 0;
+      const route = path.map((id) => {
+        const stop = this.graph.stops[id];
+        let best = cursor;
+        let bestDistance = Infinity;
+        for (let i = cursor; i < points.length; i += 1) {
+          const d = Math.hypot(points[i].x - stop.x, points[i].z - stop.z, points[i].y - stop.y);
+          if (d < bestDistance) {
+            bestDistance = d;
+            best = i;
+          }
+          if (d > bestDistance + 2) break;
+        }
+        cursor = best;
+        return { stop: id, at: cumulative[best] };
       });
       this.motion = {
         points,
         cumulative,
         total,
         s: 0,
-        elapsed: 0,
+        speed: carried,
         route,
         target,
         faceTravel,
         finalYaw,
-        cruise: total > 6 ? 2.1 : 1.8,
+        cruise: total > 6 ? 1.9 : 1.55,
         resolve,
       };
       this.cancelPan();
-      this.ensureDetail([this.graph.stops[target].space]);
+      // Fetch sharp photos for the rooms along the way, nearest first.
+      const spaces: string[] = [];
+      path.forEach((id) => {
+        const space = this.graph.stops[id].space;
+        if (!spaces.includes(space)) spaces.push(space);
+      });
+      this.ensureDetail([...spaces.slice(0, 3), this.graph.stops[target].space]);
       this.emitState();
     });
   }
@@ -838,7 +884,7 @@ export class WalkEngine {
 
   private walkPose(): Pose {
     return {
-      position: this.eye.clone().setY(this.eye.y + this.bob),
+      position: this.eye.clone(),
       quaternion: new THREE.Quaternion().setFromEuler(
         new THREE.Euler(this.pitch * DEG, -this.yaw * DEG, 0, 'YXZ'),
       ),
@@ -905,6 +951,7 @@ export class WalkEngine {
 
     if (this.mode === 'walk' && !this.flight) this.updateSpace(false);
     active = this.updateFade(dt) || active;
+    active = this.updateBlends(dt) || active;
     active = this.updateDoors(dt) || active;
     this.updateMarkers();
 
@@ -949,37 +996,40 @@ export class WalkEngine {
       active = true;
     }
 
+    let turning = false;
     if (this.motion) {
       active = true;
       const m = this.motion;
-      m.elapsed += dt;
       const remaining = m.total - m.s;
-      const speed =
-        m.cruise * clamp(m.elapsed / 0.45, 0.18, 1) * clamp(remaining / 1.1, 0.14, 1);
-      m.s = Math.min(m.total, m.s + speed * dt);
+      // Ease up to walking pace, and brake early enough to stop on the mark.
+      const brake = Math.sqrt(2 * 1.1 * Math.max(0, remaining));
+      const desired = Math.min(m.cruise, brake);
+      m.speed += (desired - m.speed) * (1 - Math.exp(-dt * 3.4));
+      if (m.speed > brake) m.speed = brake;
+      m.speed = Math.max(m.speed, remaining > 1e-3 ? 0.06 : 0);
+      m.s = Math.min(m.total, m.s + m.speed * dt);
       const feet = samplePath(m.points, m.cumulative, m.s);
-      const stride = this.reducedMotion ? 0 : 0.022 * Math.min(1, speed / m.cruise);
-      this.bob = Math.sin((m.s / 0.72) * Math.PI * 2) * stride;
       this.eye.set(feet.x, feet.y + EYE_HEIGHT, feet.z);
 
-      const ahead = samplePath(m.points, m.cumulative, Math.min(m.total, m.s + 1.5));
+      const lookAhead = Math.max(1.3, m.speed * 1.2);
+      const ahead = samplePath(m.points, m.cumulative, Math.min(m.total, m.s + lookAhead));
       const dx = ahead.x - feet.x;
       const dz = ahead.z - feet.z;
-      if (m.faceTravel && Math.hypot(dx, dz) > 0.25) {
-        const travel = Math.atan2(dx, -dz) / DEG;
-        this.targetYaw = nearestAngle(travel, this.yaw);
+      if (m.faceTravel && Math.hypot(dx, dz) > 0.2) {
+        this.targetYaw = nearestAngle(Math.atan2(dx, -dz) / DEG, this.yaw);
+        turning = true;
       }
-      if (m.finalYaw !== null && remaining < 1.6) {
-        const w = 1 - remaining / 1.6;
+      if (m.finalYaw !== null && remaining < 1.8) {
+        const w = easeInOutSine(1 - remaining / 1.8);
         const final = nearestAngle(m.finalYaw, this.yaw);
         this.targetYaw = this.targetYaw + angleDelta(final, this.targetYaw) * w;
+        turning = true;
       }
       const slope = Math.atan2(ahead.y - feet.y, Math.max(0.3, Math.hypot(dx, dz))) / DEG;
       if (m.faceTravel) this.targetPitch = clamp(slope * 0.5, -20, 20);
 
       if (m.s >= m.total - 1e-3) {
         this.motion = null;
-        this.bob = 0;
         this.stop = m.target;
         const last = this.graph.stops[m.target];
         this.eye.set(last.x, last.y + EYE_HEIGHT, last.z);
@@ -990,11 +1040,20 @@ export class WalkEngine {
       }
     }
 
+    // While walking the head turns like a critically damped spring — no lag
+    // at the start of a turn, no overshoot at the end.
+    const dy = angleDelta(this.targetYaw, this.yaw);
+    if (turning || this.motion) {
+      const omega = 5;
+      this.yawSpeed += (omega * omega * dy - 2 * omega * this.yawSpeed) * dt;
+      this.yaw += this.yawSpeed * dt;
+    } else {
+      this.yawSpeed = 0;
+      this.yaw += (this.targetYaw - this.yaw) * (1 - Math.exp(-dt * 9));
+    }
     const ease = 1 - Math.exp(-dt * (this.motion ? 5 : 9));
-    const dy = this.targetYaw - this.yaw;
     const dp = this.targetPitch - this.pitch;
     const df = this.targetFov - this.fov;
-    this.yaw += dy * ease;
     this.pitch += dp * ease;
     this.fov += df * ease;
     if (Math.abs(dy) > 0.01 || Math.abs(dp) > 0.01 || Math.abs(df) > 0.01) active = true;
@@ -1085,7 +1144,7 @@ export class WalkEngine {
     this.house.shell.visible = !cutaway;
     this.house.shell.children.forEach((child) => {
       const mesh = child as THREE.Mesh;
-      mesh.material = shellSource ? shellSource.material : (mesh.userData.cgMaterial as THREE.Material);
+      mesh.material = shellSource ? shellSource.shellMaterial : (mesh.userData.cgMaterial as THREE.Material);
     });
 
     this.house.rooms.forEach((room) => {
@@ -1112,6 +1171,16 @@ export class WalkEngine {
       space.material.transparent = false;
       space.material.uniforms.opacity.value = 1;
       space.dome.renderOrder = 0;
+    });
+    // Reconstructed shapes: seen from inside while walking (both faces, so a
+    // chair has a back), from outside in the other views (front faces only, so
+    // the dollhouse sees into rooms rather than onto their backs).
+    this.depth.forEach((build) => {
+      build.material.side = walk ? THREE.DoubleSide : THREE.FrontSide;
+      build.material.transparent = false;
+      build.material.depthTest = true;
+      build.body.renderOrder = 0;
+      if (build.ceiling) build.ceiling.visible = !cutaway;
     });
 
     let portalCount = 0;
@@ -1159,6 +1228,12 @@ export class WalkEngine {
       material.uniforms.opacity.value = easeInOutSine(this.fade.t);
       outdoorHere.dome.renderOrder = 10;
     }
+    // An open-air space's reconstructed shape travels with its dome; while a
+    // dome is still fading in, the flat dome alone carries the blend.
+    this.house.outdoor.forEach((space, id) => {
+      const build = this.depth.get(id);
+      if (build) build.body.visible = space.dome.visible && !(blendingIn && space === outdoorHere);
+    });
 
     // Floor cut for the dollhouse and floor plan.
     if (cutaway && this.level !== 'all') {
@@ -1212,6 +1287,18 @@ export class WalkEngine {
     return true;
   }
 
+  private updateBlends(dt: number) {
+    if (!this.blending.size) return false;
+    this.blending.forEach((uniforms) => {
+      uniforms.blend.value = Math.min(1, uniforms.blend.value + dt / 0.45);
+      if (uniforms.blend.value >= 1) {
+        uniforms.mapPrevious.value = null;
+        this.blending.delete(uniforms);
+      }
+    });
+    return true;
+  }
+
   private updateDoors(dt: number) {
     if (!this.house.leaves.length) return false;
     const door = this.house.leaves[0].door;
@@ -1244,6 +1331,7 @@ export class WalkEngine {
     const origin = this.motion ? this.graph.stops[this.motion.target] : this.graph.stops[this.stop];
     this.graph.stops.forEach((stop) => {
       if (stop.id === this.stop && !this.motion) return;
+      if (this.occupied.has(stop.id)) return;
       if (origin && Math.hypot(stop.x - origin.x, stop.z - origin.z) > 12) return;
       if (Math.abs(stop.y - feet) > 2.2) return;
       let y = stop.y;
@@ -1269,6 +1357,72 @@ export class WalkEngine {
   }
 
   // ------------------------------------------------------------ textures --
+
+  /**
+   * Each photo's reconstructed depth (see scripts/build-depth.ts) turns into a
+   * displaced mesh in front of its room box. A photo without a depth map keeps
+   * the box alone, so new captures work before they have been processed.
+   */
+  private loadDepthMaps() {
+    const segments = this.fullLimit <= 2 ? 192 : 288;
+    captureNodes(this.tour).forEach((node) => {
+      const image = new Image();
+      image.decoding = 'async';
+      image.onload = () => {
+        if (this.disposed) return;
+        const canvas = document.createElement('canvas');
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        if (!context) return;
+        context.drawImage(image, 0, 0);
+        const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+        const host = this.house.rooms.get(node.id) ?? this.house.outdoor.get(node.id);
+        if (!host) return;
+        const build = buildDepthMesh(
+          this.tour,
+          node,
+          { data: pixels.data, width: pixels.width, height: pixels.height, stride: 4 },
+          this.house.doors,
+          host.material,
+          segments,
+        );
+        const room = this.house.rooms.get(node.id);
+        if (room) {
+          room.group.add(build.body);
+          if (build.ceiling) room.group.add(build.ceiling);
+        } else {
+          this.world.add(build.body);
+        }
+        this.depth.set(node.id, build);
+        this.placeInfoPoints(node);
+        this.markOccupied(node, build);
+        this.applyScene();
+      };
+      image.src = `/panoramas/${node.pano}-depth.png`;
+    });
+  }
+
+  /** Lattice stops whose floor spot is taken by furniture in the photo. */
+  private markOccupied(node: TourNode, build: DepthMeshBuild) {
+    if (spaceKind(node) !== 'room') return;
+    const floorY = floorElevation(this.tour, node.floor);
+    const capture = captureOf(node);
+    const eye = new THREE.Vector3(capture.x, floorY + EYE_HEIGHT, capture.z);
+    this.graph.stops.forEach((stop) => {
+      if (stop.space !== node.id || stop.kind !== 'grid') return;
+      const dir = new THREE.Vector3(stop.x - eye.x, floorY - eye.y, stop.z - eye.z);
+      const distance = dir.length();
+      dir.normalize();
+      const hit = proxyDistance(this.tour, node, dir) * build.ratioAt(dir);
+      if (hit > distance - 0.35) return;
+      const point = eye.clone().addScaledVector(dir, hit);
+      if (Math.hypot(point.x - stop.x, point.z - stop.z) < 1.0 && point.y - floorY < 1.3) {
+        this.occupied.add(stop.id);
+      }
+    });
+    this.markerKey = '';
+  }
 
   private loadPreviews() {
     const nodes = captureNodes(this.tour);
@@ -1327,7 +1481,7 @@ export class WalkEngine {
       if (keep.has(pano) || !slot.full) return;
       const full = slot.full;
       slot.full = undefined;
-      if (slot.preview) this.assign(pano, slot.preview);
+      if (slot.preview) this.assign(pano, slot.preview, false);
       full.dispose();
     });
   }
@@ -1341,7 +1495,7 @@ export class WalkEngine {
     return slot;
   }
 
-  private assign(pano: string, texture: THREE.Texture) {
+  private assign(pano: string, texture: THREE.Texture, fade = true) {
     const hosts: ProjectionMaterialHost[] = [];
     this.house.rooms.forEach((room) => {
       if (room.node.pano === pano) hosts.push(room);
@@ -1350,8 +1504,19 @@ export class WalkEngine {
       if (space.node.pano === pano) hosts.push(space);
     });
     hosts.forEach((host) => {
-      host.material.uniforms.map.value = texture;
-      host.material.uniforms.hasMap.value = 1;
+      const uniforms = host.material.uniforms;
+      const previous = uniforms.map.value;
+      uniforms.map.value = texture;
+      uniforms.hasMap.value = 1;
+      if (fade && previous && previous !== texture && !this.reducedMotion) {
+        uniforms.mapPrevious.value = previous;
+        uniforms.blend.value = 0;
+        this.blending.add(uniforms);
+      } else {
+        uniforms.mapPrevious.value = null;
+        uniforms.blend.value = 1;
+        this.blending.delete(uniforms);
+      }
     });
   }
 
@@ -1377,40 +1542,35 @@ export class WalkEngine {
 
   // ------------------------------------------------------------ overlays --
 
-  private computeInfoPoints() {
-    this.tour.nodes.forEach((node) => {
-      if (!hasPano(node) || !node.hotspots?.length) return;
-      const y = floorElevation(this.tour, node.floor);
-      const capture = captureOf(node);
-      const eye = new THREE.Vector3(capture.x, y + EYE_HEIGHT, capture.z);
-      const points = node.hotspots.map((hotspot) => {
-        const yaw = (hotspot.yaw + (node.heading ?? 0)) * DEG;
-        const pitch = hotspot.pitch * DEG;
-        const dir = new THREE.Vector3(
-          Math.sin(yaw) * Math.cos(pitch),
-          Math.sin(pitch),
-          -Math.cos(yaw) * Math.cos(pitch),
-        );
-        let distance = 6;
-        if (spaceKind(node) === 'room') {
-          const box = new THREE.Box3(
-            new THREE.Vector3(node.rect.x, y, node.rect.z),
-            new THREE.Vector3(node.rect.x + node.rect.w, y + ceilingHeight(node), node.rect.z + node.rect.d),
-          );
-          // Cast back from well outside the room to find where the view ray
-          // leaves it; the marker sits just in front of that wall.
-          const back = new THREE.Ray(eye.clone().addScaledVector(dir, 100), dir.clone().negate());
-          const exit = new THREE.Vector3();
-          if (back.intersectBox(box, exit)) distance = Math.max(0.8, exit.distanceTo(eye) * 0.96);
-        }
-        return {
-          point: eye.clone().addScaledVector(dir, distance),
-          label: hotspot.label,
-          body: hotspot.body ?? '',
-        };
-      });
-      this.infoPoints.set(node.id, points);
+  /**
+   * Where each info marker sits: along its view ray from the capture point, on
+   * the reconstructed surface when the depth map is in (so a marker about the
+   * hearth sits on the hearth), otherwise just in front of the room box.
+   */
+  private placeInfoPoints(node: TourNode) {
+    if (!hasPano(node) || !node.hotspots?.length) return;
+    const y = floorElevation(this.tour, node.floor);
+    const capture = captureOf(node);
+    const eye = new THREE.Vector3(capture.x, y + EYE_HEIGHT, capture.z);
+    const depth = this.depth.get(node.id);
+    const points = node.hotspots.map((hotspot) => {
+      const yaw = (hotspot.yaw + (node.heading ?? 0)) * DEG;
+      const pitch = hotspot.pitch * DEG;
+      const dir = new THREE.Vector3(
+        Math.sin(yaw) * Math.cos(pitch),
+        Math.sin(pitch),
+        -Math.cos(yaw) * Math.cos(pitch),
+      );
+      const ratio = depth ? depth.ratioAt(dir) : 1;
+      const limit = spaceKind(node) === 'room' ? Infinity : 8;
+      const distance = clamp(proxyDistance(this.tour, node, dir) * ratio * 0.95, 0.8, limit);
+      return {
+        point: eye.clone().addScaledVector(dir, distance),
+        label: hotspot.label,
+        body: hotspot.body ?? '',
+      };
     });
+    this.infoPoints.set(node.id, points);
   }
 
   private emitOverlay() {
@@ -1788,7 +1948,8 @@ export class WalkEngine {
   private click(event: PointerEvent) {
     if (this.flight) return;
     if (this.measuring && this.mode === 'walk') {
-      const hit = this.pick(event, [...this.house.walkable, ...this.house.solid]);
+      const shapes = [...this.depth.values()].map((build) => build.body);
+      const hit = this.pick(event, [...shapes, ...this.house.walkable, ...this.house.solid]);
       if (hit) {
         this.measurePoints = [...this.measurePoints, hit.point.clone()].slice(-2);
         this.lastMeasureKey = '';
@@ -1827,15 +1988,21 @@ export class WalkEngine {
   /** The stop a floor point most plausibly means: same space and level first. */
   private stopNear(point: THREE.Vector3, space?: string) {
     const level = floorAtElevation(this.tour, point.y + 0.2);
+    const free = (id: number) => !this.occupied.has(id);
     const inSpace = space
-      ? nearestStop(this.graph, point.x, point.z, (stop) => stop.space === space && Math.abs(stop.y - point.y) < 1.2)
+      ? nearestStop(
+          this.graph,
+          point.x,
+          point.z,
+          (stop) => stop.space === space && free(stop.id) && Math.abs(stop.y - point.y) < 1.2,
+        )
       : -1;
     if (inSpace >= 0) return inSpace;
     return nearestStop(
       this.graph,
       point.x,
       point.z,
-      (stop) => stop.floor === level && Math.abs(stop.y - point.y) < 1.5,
+      (stop) => stop.floor === level && free(stop.id) && Math.abs(stop.y - point.y) < 1.5,
     );
   }
 }
@@ -1845,24 +2012,6 @@ export class WalkEngine {
 function writePortal(door: DoorGeometry, a: THREE.Vector4, b: THREE.Vector2) {
   a.set(door.plane, door.along, door.bottom - 0.05, door.axis === 'x' ? 0 : 1);
   b.set(door.width / 2 + 0.02, door.height + 0.05);
-}
-
-/** Chaikin corner cutting: rounds the corners of a walk so turns are eased. */
-function smoothPath(points: THREE.Vector3[]) {
-  let current = points;
-  for (let pass = 0; pass < 2; pass += 1) {
-    if (current.length < 3) break;
-    const next = [current[0]];
-    for (let i = 0; i < current.length - 1; i += 1) {
-      const a = current[i];
-      const b = current[i + 1];
-      if (i > 0) next.push(a.clone().lerp(b, 0.25));
-      if (i < current.length - 2) next.push(a.clone().lerp(b, 0.75));
-    }
-    next.push(current[current.length - 1]);
-    current = next;
-  }
-  return current;
 }
 
 function samplePath(points: THREE.Vector3[], cumulative: number[], s: number) {

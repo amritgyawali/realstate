@@ -21,6 +21,9 @@ export const EYE_HEIGHT = 1.6;
 /** Pseudo-space id for the grounds around the house. */
 export const OUTSIDE = 'outside';
 
+/** Radius of the dome an open-air space's photograph is projected onto. */
+export const DOME_RADIUS = 34;
+
 const EPSILON = 0.05;
 
 export type WallSide = 'n' | 's' | 'e' | 'w';
@@ -291,4 +294,49 @@ export function floorBounds(tour: PropertyTour, floor?: number) {
   const x1 = Math.max(...source.map((node) => node.rect.x + node.rect.w));
   const z1 = Math.max(...source.map((node) => node.rect.z + node.rect.d));
   return { x: x0, z: z0, w: x1 - x0, d: z1 - z0 };
+}
+
+// ------------------------------------------------------------- the proxy ---
+
+/**
+ * Converts a direction in a photograph's own frame (yaw clockwise from the
+ * photo's forward, pitch above the horizon, degrees) to a world direction.
+ */
+export function panoDirection(node: TourNode, yawDeg: number, pitchDeg: number) {
+  const yaw = ((yawDeg + (node.heading ?? 0)) * Math.PI) / 180;
+  const pitch = (pitchDeg * Math.PI) / 180;
+  return {
+    x: Math.sin(yaw) * Math.cos(pitch),
+    y: Math.sin(pitch),
+    z: -Math.cos(yaw) * Math.cos(pitch),
+  };
+}
+
+/**
+ * How far a ray from a space's capture point travels before it meets the
+ * surface the photograph is projected onto: the room box for a room, the dome
+ * and its floor for an open-air space. The depth maps store every pixel's depth
+ * as a fraction of this distance, so a map stays valid if a room is resized.
+ */
+export function proxyDistance(tour: PropertyTour, node: TourNode, dir: { x: number; y: number; z: number }) {
+  const floorY = floorElevation(tour, node.floor);
+  const capture = captureOf(node);
+  const eye = { x: capture.x, y: floorY + EYE_HEIGHT, z: capture.z };
+  if (spaceKind(node) === 'outdoor') {
+    let t = DOME_RADIUS;
+    if (dir.y < -1e-6) t = Math.min(t, (floorY - 0.015 - eye.y) / dir.y);
+    return t;
+  }
+  const bounds: [number, number, number][] = [
+    [node.rect.x, node.rect.x + node.rect.w, eye.x],
+    [floorY, floorY + ceilingHeight(node), eye.y],
+    [node.rect.z, node.rect.z + node.rect.d, eye.z],
+  ];
+  const d = [dir.x, dir.y, dir.z];
+  let t = Infinity;
+  bounds.forEach(([lo, hi, o], axis) => {
+    if (d[axis] > 1e-9) t = Math.min(t, (hi - o) / d[axis]);
+    else if (d[axis] < -1e-9) t = Math.min(t, (lo - o) / d[axis]);
+  });
+  return Math.max(0.05, t);
 }

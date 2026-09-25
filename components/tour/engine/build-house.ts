@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { PropertyTour, TourNode, TourRect } from '@/lib/types';
 import {
   ASCENT,
+  DOME_RADIUS,
   EYE_HEIGHT,
   INWARD,
   OUTSIDE,
@@ -13,6 +14,8 @@ import {
   hasPano,
   isInterior,
   nodeById,
+  panoDirection,
+  proxyDistance,
   rectEdges,
   sideOfRect,
   spaceKind,
@@ -23,6 +26,7 @@ import {
 } from '@/lib/tour/layout';
 import {
   createProjectionMaterial,
+  linkedClone,
   type Palette,
   type PortalUniforms,
   type ProjectionMaterial,
@@ -58,6 +62,8 @@ export interface RoomBuild {
 export interface OutdoorBuild {
   node: TourNode;
   material: ProjectionMaterial;
+  /** Front-facing twin of `material`, for the facade while standing on the deck. */
+  shellMaterial: ProjectionMaterial;
   /** The photo dome, shown while standing in or looking into the space. */
   dome: THREE.Mesh;
   /** The photo floor alone, for the dollhouse and floor plan. */
@@ -101,7 +107,6 @@ export interface HouseBuild {
   doors: DoorGeometry[];
 }
 
-const DOME_RADIUS = 34;
 
 export function buildHouse(
   tour: PropertyTour,
@@ -187,15 +192,12 @@ export function buildHouse(
     dome.frustumCulled = false;
     root.add(dome);
 
-    const patchMaterial = material.clone() as ProjectionMaterial;
+    const patchMaterial = linkedClone(material);
     patchMaterial.side = THREE.FrontSide;
-    patchMaterial.uniforms.capture = material.uniforms.capture;
-    patchMaterial.uniforms.map = material.uniforms.map;
-    patchMaterial.uniforms.hasMap = material.uniforms.hasMap;
-    patchMaterial.uniforms.clampFloor = { value: 0 };
-    Object.keys(portals).forEach((key) => {
-      patchMaterial.uniforms[key as keyof ProjectionMaterial['uniforms']] = portals[key] as never;
-    });
+    // The facade seen from this deck wears the same photograph; it needs its
+    // own front-facing material, since the dome is drawn from the inside.
+    const shellMaterial = linkedClone(material);
+    shellMaterial.side = THREE.FrontSide;
     const patchGeometry = new Builder();
     patchGeometry.flat(node.rect, y - 0.015, true);
     const patch = tag(new THREE.Mesh(patchGeometry.build(), patchMaterial), node.id, 'floor');
@@ -208,7 +210,7 @@ export function buildHouse(
 
     const deck = buildDeck(tour, node, palette);
     grounds.add(deck);
-    outdoor.set(node.id, { node, material, dome, patch, deck });
+    outdoor.set(node.id, { node, material, shellMaterial, dome, patch, deck });
   });
 
   // ------------------------------------------------------ facade layout --
@@ -279,14 +281,14 @@ export function buildHouse(
   const leaves: DoorLeaf[] = [];
   // Door frames are grouped by level so the dollhouse and floor plan can show
   // one level's frames without the others floating over it.
-  const frameSets = new Map<number, { trim: Builder; metal: Builder; reveal: Builder; group: THREE.Group }>();
+  const frameSets = new Map<number, { trim: Builder; metal: Builder; group: THREE.Group }>();
   const frameSet = (floor: number) => {
     let set = frameSets.get(floor);
     if (!set) {
       const group = new THREE.Group();
       group.userData.floor = floor;
       casings.add(group);
-      set = { trim: new Builder(), metal: new Builder(), reveal: new Builder(), group };
+      set = { trim: new Builder(), metal: new Builder(), group };
       frameSets.set(floor, set);
     }
     return set;
@@ -295,9 +297,11 @@ export function buildHouse(
     const style = door.door.style ?? 'door';
     if (style === 'open') return;
     const set = frameSet(door.floor);
-    const target = style === 'glass' ? set.metal : style === 'arch' ? set.reveal : set.trim;
-    const depth = style === 'arch' ? 0.3 : 0.24;
-    const jamb = style === 'glass' ? 0.06 : 0.09;
+    // Slim frames read as doorways against the photographs; a deep pale
+    // reveal stood out as a slab.
+    const target = style === 'glass' ? set.metal : set.trim;
+    const depth = style === 'arch' ? 0.2 : 0.24;
+    const jamb = style === 'glass' ? 0.06 : style === 'arch' ? 0.07 : 0.09;
     const centre = doorCentre(door);
     const along = door.axis === 'z' ? { x: 1, z: 0 } : { x: 0, z: 1 };
     const half = door.width / 2 + jamb / 2;
@@ -380,7 +384,6 @@ export function buildHouse(
     set.group.add(
       new THREE.Mesh(set.trim.build(), palette.doorLeaf),
       new THREE.Mesh(set.metal.build(), palette.metal),
-      new THREE.Mesh(set.reveal.build(), palette.plaster),
     );
   });
 
@@ -826,6 +829,207 @@ function buildEntrance(
   pathMesh.userData.space = OUTSIDE;
   grounds.add(pathMesh);
   walkable.push(pathMesh);
+}
+
+// ---------------------------------------------------------- depth meshes ---
+
+/**
+ * A decoded depth map: one byte per pixel, the square root of the fraction of
+ * the proxy distance (see scripts/build-depth.ts).
+ */
+export interface DepthMap {
+  data: Uint8Array | Uint8ClampedArray;
+  width: number;
+  height: number;
+  /** Bytes between pixels (4 for RGBA canvas data). */
+  stride: number;
+}
+
+export interface DepthMeshBuild {
+  /** Everything but the ceiling. */
+  body: THREE.Mesh;
+  /** Ceiling triangles, hidden with the ceiling in the dollhouse. */
+  ceiling: THREE.Mesh | null;
+  material: ProjectionMaterial;
+  /** Reconstructed depth along a world direction, as a fraction of the proxy. */
+  ratioAt: (dir: { x: number; y: number; z: number }) => number;
+}
+
+/** Sample a depth map along a direction in the photo's own frame. */
+export function sampleDepth(depth: DepthMap, yawDeg: number, pitchDeg: number) {
+  let u = yawDeg / 360 - 0.25;
+  u -= Math.floor(u);
+  const v = 0.5 + pitchDeg / 180;
+  const x = u * depth.width - 0.5;
+  const y = Math.min(depth.height - 1.001, Math.max(0, (1 - v) * depth.height - 0.5));
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
+  const fx = x - x0;
+  const fy = y - y0;
+  const xa = ((x0 % depth.width) + depth.width) % depth.width;
+  const xb = (xa + 1) % depth.width;
+  const at = (xx: number, yy: number) => {
+    const root = depth.data[(yy * depth.width + xx) * depth.stride] / 255;
+    return root * root;
+  };
+  const top = at(xa, y0) * (1 - fx) + at(xb, y0) * fx;
+  const bottom = at(xa, y0 + 1) * (1 - fx) + at(xb, y0 + 1) * fx;
+  return Math.max(0.02, top * (1 - fy) + bottom * fy);
+}
+
+/**
+ * Prepares a depth map for meshing: anything within a few percent of the room
+ * box is snapped onto it, so walls, floors and ceilings are perfectly flat
+ * instead of carrying the model's noise; then a small blur turns depth edges
+ * into short ramps.
+ */
+export function smoothDepth(raw: DepthMap): DepthMap {
+  const { width, height } = raw;
+  const ratio = new Float32Array(width * height);
+  for (let k = 0; k < ratio.length; k += 1) {
+    const root = raw.data[k * raw.stride] / 255;
+    const r = root * root;
+    // 0.86–0.94 blends into 1: flat surfaces lock onto the box.
+    const t = Math.min(1, Math.max(0, (r - 0.86) / 0.08));
+    const snap = t * t * (3 - 2 * t);
+    ratio[k] = r + (1 - r) * snap;
+  }
+  const blurred = new Float32Array(ratio.length);
+  const radius = 2;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      let sum = 0;
+      let n = 0;
+      for (let dy = -radius; dy <= radius; dy += 1) {
+        const yy = Math.min(height - 1, Math.max(0, y + dy));
+        for (let dx = -radius; dx <= radius; dx += 1) {
+          const xx = (x + dx + width) % width;
+          sum += Math.log(ratio[yy * width + xx]);
+          n += 1;
+        }
+      }
+      blurred[y * width + x] = Math.exp(sum / n);
+    }
+  }
+  const data = new Uint8Array(ratio.length);
+  for (let k = 0; k < data.length; k += 1) data[k] = Math.round(Math.sqrt(blurred[k]) * 255);
+  return { data, width, height, stride: 1 };
+}
+
+/**
+ * Gives a photograph its shape back: a sphere of rays from the capture point,
+ * each pushed out to the depth the photo was reconstructed at. Because every
+ * vertex lies on its own ray, the photo still lines up exactly at the capture
+ * point; anywhere else furniture stands off the floor instead of smearing
+ * across it.
+ *
+ * Triangles that bridge a depth edge (the side of a sofa the camera never saw)
+ * and triangles in front of a real doorway are left out; the room box behind
+ * shows through those gaps, so nothing is ever empty.
+ */
+export function buildDepthMesh(
+  tour: PropertyTour,
+  node: TourNode,
+  raw: DepthMap,
+  doors: DoorGeometry[],
+  source: ProjectionMaterial,
+  segments: number,
+): DepthMeshBuild {
+  const depth = smoothDepth(raw);
+  const W = segments;
+  const H = Math.round(segments / 2);
+  const floorY = floorElevation(tour, node.floor);
+  const capture = captureOf(node);
+  const eye = new THREE.Vector3(capture.x, floorY + EYE_HEIGHT, capture.z);
+  const room = spaceKind(node) === 'room';
+  const ceilingY = floorY + ceilingHeight(node);
+  const own = doors.filter((door) => door.door.a === node.id || door.door.b === node.id);
+
+  const count = (W + 1) * (H + 1);
+  const positions = new Float32Array(count * 3);
+  const blocked = new Uint8Array(count);
+  const up = new Uint8Array(count);
+  const end = new THREE.Vector3();
+  for (let j = 0; j <= H; j += 1) {
+    const pitch = 90 - (180 * j) / H;
+    for (let i = 0; i <= W; i += 1) {
+      const yaw = (360 * i) / W;
+      const k = j * (W + 1) + i;
+      const dir = panoDirection(node, yaw, pitch);
+      const box = proxyDistance(tour, node, dir);
+      const ratio = Math.abs(pitch) > 89.9 ? 1 : sampleDepth(depth, yaw, pitch);
+      const distance = box * ratio * 0.996;
+      positions[k * 3] = eye.x + dir.x * distance;
+      positions[k * 3 + 1] = eye.y + dir.y * distance;
+      positions[k * 3 + 2] = eye.z + dir.z * distance;
+      end.set(eye.x + dir.x * (box + 0.08), eye.y + dir.y * (box + 0.08), eye.z + dir.z * (box + 0.08));
+      if (own.some((door) => rayThroughDoor(eye, end, door))) blocked[k] = 1;
+      if (room && pitch > 0 && positions[k * 3 + 1] > ceilingY - 0.35) up[k] = 1;
+    }
+  }
+
+  const body: number[] = [];
+  const ceiling: number[] = [];
+  // Depth edges are bridged rather than torn open: after smoothing they are
+  // short ramps, which read as a soft stretch when seen from one side, where
+  // a hole would show a jagged ghost of the furniture on the wall behind.
+  const triangle = (a: number, b: number, c: number) => {
+    if (blocked[a] || blocked[b] || blocked[c]) return;
+    (up[a] && up[b] && up[c] ? ceiling : body).push(a, b, c);
+  };
+  for (let j = 0; j < H; j += 1) {
+    for (let i = 0; i < W; i += 1) {
+      const a = j * (W + 1) + i;
+      const b = a + 1;
+      const c = a + W + 1;
+      const d = c + 1;
+      // Wound to face the capture point.
+      triangle(a, c, b);
+      triangle(b, c, d);
+    }
+  }
+
+  const position = new THREE.BufferAttribute(positions, 3);
+  const make = (indices: number[]) => {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', position);
+    geometry.setIndex(indices);
+    geometry.computeBoundingSphere();
+    return geometry;
+  };
+  const material = linkedClone(source, { NEAR_FADE: '0.32' });
+  material.side = THREE.DoubleSide;
+  const bodyMesh = tag(new THREE.Mesh(make(body), material), node.id, 'depth');
+  const ceilingMesh = ceiling.length
+    ? tag(new THREE.Mesh(make(ceiling), material), node.id, 'ceiling')
+    : null;
+
+  const heading = node.heading ?? 0;
+  const ratioAt = (dir: { x: number; y: number; z: number }) => {
+    const yaw = (Math.atan2(dir.x, -dir.z) * 180) / Math.PI - heading;
+    const pitch = (Math.asin(Math.max(-1, Math.min(1, dir.y))) * 180) / Math.PI;
+    return sampleDepth(depth, yaw, pitch);
+  };
+  return { body: bodyMesh, ceiling: ceilingMesh, material, ratioAt };
+}
+
+/** Does the segment from `from` to `to` pass through a door's opening? */
+export function rayThroughDoor(from: THREE.Vector3, to: THREE.Vector3, door: DoorGeometry, margin = 0.1) {
+  const c0 = door.axis === 'x' ? from.x : from.z;
+  const c1 = door.axis === 'x' ? to.x : to.z;
+  const span = c1 - c0;
+  if (Math.abs(span) < 1e-6) return false;
+  const t = (door.plane - c0) / span;
+  if (t <= 0 || t >= 1) return false;
+  const qx = from.x + (to.x - from.x) * t;
+  const qy = from.y + (to.y - from.y) * t;
+  const qz = from.z + (to.z - from.z) * t;
+  const lateral = (door.axis === 'x' ? qz : qx) - door.along;
+  return (
+    Math.abs(lateral) <= door.width / 2 + margin &&
+    qy >= door.bottom - margin &&
+    qy <= door.bottom + door.height + margin
+  );
 }
 
 // ------------------------------------------------------------- geometry ---

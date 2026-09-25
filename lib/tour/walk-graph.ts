@@ -51,6 +51,12 @@ export interface WalkGraph {
 }
 
 const STEP = 1.5;
+/**
+ * In a photographed room, places to stand stay within this distance of the
+ * capture point (doorway stops aside): the photo is exact at the capture point
+ * and holds up well near it, so every place a walk comes to rest looks right.
+ */
+const PHOTO_REACH = 2.4;
 const LINK = 2.25;
 const WALL_INSET = 0.5;
 const DOOR_OFFSET = 0.75;
@@ -194,6 +200,9 @@ export function buildWalkGraph(tour: PropertyTour): WalkGraph {
         const z = anchor.z + j * STEP;
         if (blocked(node.id, x, z)) continue;
         if (occupied.some((stop) => Math.hypot(stop.x - x, stop.z - z) < 0.9)) continue;
+        if (hasPano(node) && spaceKind(node) === 'room' && Math.hypot(x - anchor.x, z - anchor.z) > PHOTO_REACH) {
+          continue;
+        }
         add({ x, z, y, space: node.id, floor: node.floor, kind: 'grid' });
       }
     }
@@ -332,8 +341,16 @@ export function buildWalkGraph(tour: PropertyTour): WalkGraph {
   };
 }
 
-/** Shortest walk between two stops, as a list of stop ids including both ends. */
-export function findPath(graph: WalkGraph, from: number, to: number): number[] | null {
+/**
+ * Shortest walk between two stops, as a list of stop ids including both ends.
+ * Stops in `avoid` (standing on furniture) cost three times as much to pass.
+ */
+export function findPath(
+  graph: WalkGraph,
+  from: number,
+  to: number,
+  avoid?: Set<number>,
+): number[] | null {
   if (from === to) return [from];
   const { stops, adjacency } = graph;
   const cost = new Array<number>(stops.length).fill(Infinity);
@@ -353,7 +370,8 @@ export function findPath(graph: WalkGraph, from: number, to: number): number[] |
     if (current === to) break;
     done[current] = true;
     adjacency[current].forEach((next) => {
-      const step = cost[current] + dist3(stops[current], stops[next]);
+      const penalty = avoid?.has(next) && next !== to ? 3 : 1;
+      const step = cost[current] + dist3(stops[current], stops[next]) * penalty;
       if (step < cost[next]) {
         cost[next] = step;
         previous[next] = current;
@@ -363,6 +381,60 @@ export function findPath(graph: WalkGraph, from: number, to: number): number[] |
   const path = [to];
   while (path[0] !== from) path.unshift(previous[path[0]]);
   return path;
+}
+
+/**
+ * Turns a path of stops into the points a person would actually walk through.
+ * Inside one space the route is pulled straight wherever the straight line
+ * stays inside the room (and clear of a stair flight), so a walk across a room
+ * is one smooth line rather than a zig-zag over the lattice. Every doorway is
+ * crossed square through its centre.
+ */
+export function routeWaypoints(tour: PropertyTour, graph: WalkGraph, path: number[]) {
+  const stops = path.map((id) => graph.stops[id]);
+  const doors = doorGeometries(tour);
+  const obstacles = new Map<string, TourRect[]>();
+  tour.stairs.forEach((stair) => {
+    const padded = pad(stair.run, STAIR_MARGIN);
+    [stair.from, stair.to].forEach((id) => obstacles.set(id, [...(obstacles.get(id) ?? []), padded]));
+  });
+
+  const clear = (from: number, to: number) => {
+    const first = stops[from];
+    if (first.space === OUTSIDE) return false;
+    for (let m = from; m <= to; m += 1) {
+      const stop = stops[m];
+      if (stop.space !== first.space || stop.kind === 'tread' || Math.abs(stop.y - first.y) > 0.05) {
+        return false;
+      }
+    }
+    return !(obstacles.get(first.space) ?? []).some((rect) => segmentHitsRect(first, stops[to], rect));
+  };
+
+  const points: { x: number; y: number; z: number }[] = [stops[0]];
+  let at = 0;
+  while (at < stops.length - 1) {
+    let next = at + 1;
+    for (let k = stops.length - 1; k > at + 1; k -= 1) {
+      if (clear(at, k)) {
+        next = k;
+        break;
+      }
+    }
+    const a = stops[next - 1];
+    const b = stops[next];
+    if (a.door !== undefined && a.door === b.door && a.space !== b.space) {
+      const door = doors[a.door];
+      points.push(
+        door.axis === 'x'
+          ? { x: door.plane, y: (a.y + b.y) / 2, z: door.along }
+          : { x: door.along, y: (a.y + b.y) / 2, z: door.plane },
+      );
+    }
+    points.push(b);
+    at = next;
+  }
+  return points;
 }
 
 /** Nearest stop to a point, optionally restricted to a level or a space. */

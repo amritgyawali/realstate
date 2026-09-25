@@ -104,7 +104,9 @@ const PROJECTION_VERTEX = /* glsl */ `
 
 const PROJECTION_FRAGMENT = /* glsl */ `
   uniform sampler2D map;
+  uniform sampler2D mapPrevious;
   uniform float hasMap;
+  uniform float blend;
   uniform vec3 capture;
   uniform float heading;
   uniform float opacity;
@@ -121,6 +123,11 @@ const PROJECTION_FRAGMENT = /* glsl */ `
 
   void main() {
     #include <clipping_planes_fragment>
+    #ifdef NEAR_FADE
+      // Reconstructed geometry right at the lens (a lamp, a doorframe the walk
+      // brushes past) is dropped rather than filling the screen.
+      if (distance(vWorld, cameraPosition) < NEAR_FADE) discard;
+    #endif
     if (ownCount > 0) {
       bool seen = false;
       for (int i = 0; i < 2; i++) {
@@ -143,7 +150,13 @@ const PROJECTION_FRAGMENT = /* glsl */ `
     float u2 = fract(t + 0.5) - 0.5;
     float u = fwidth(u1) < fwidth(u2) - 0.001 ? u1 : u2;
     float v = 0.5 + asin(clamp(d.y, -1.0, 1.0)) / PI;
-    vec3 colour = hasMap > 0.5 ? texture2D(map, vec2(u, v)).rgb : fallback;
+    vec3 colour = fallback;
+    if (hasMap > 0.5) {
+      colour = texture2D(map, vec2(u, v)).rgb;
+      // Sharpen from the preview to the full capture over a few frames instead
+      // of popping.
+      if (blend < 0.999) colour = mix(texture2D(mapPrevious, vec2(u, v)).rgb, colour, blend);
+    }
     gl_FragColor = vec4(colour * exposure, opacity);
     #include <colorspace_fragment>
   }
@@ -163,6 +176,8 @@ export interface ProjectionOptions {
 export type ProjectionMaterial = THREE.ShaderMaterial & {
   uniforms: {
     map: { value: THREE.Texture | null };
+    mapPrevious: { value: THREE.Texture | null };
+    blend: { value: number };
     hasMap: { value: number };
     capture: { value: THREE.Vector3 };
     heading: { value: number };
@@ -182,6 +197,8 @@ export function createProjectionMaterial(options: ProjectionOptions): Projection
     uniforms: {
       ...options.portals,
       map: { value: null },
+      mapPrevious: { value: null },
+      blend: { value: 1 },
       hasMap: { value: 0 },
       capture: { value: options.capture },
       heading: { value: options.heading * DEG },
@@ -200,6 +217,22 @@ export function createProjectionMaterial(options: ProjectionOptions): Projection
     clipping: true,
   });
   return material as ProjectionMaterial;
+}
+
+/**
+ * A second material over the same photo: every uniform is shared (so texture
+ * swaps, fades and portal cuts apply to both), while render state such as
+ * culling and defines can differ.
+ */
+export function linkedClone(
+  material: ProjectionMaterial,
+  defines: Record<string, string | number> = {},
+): ProjectionMaterial {
+  const clone = material.clone() as ProjectionMaterial;
+  clone.uniforms = material.uniforms;
+  clone.defines = { ...material.defines, ...defines };
+  clone.clippingPlanes = material.clippingPlanes;
+  return clone;
 }
 
 // ---------------------------------------------------------- CG palette ---
