@@ -86,6 +86,18 @@ number keys) walks the route there.
   through their doorways (portal clipping); stairs, door frames, facade, roofs,
   porch and grounds are modelled. `environment.ts` is the sky, ground, street and
   planting.
+- Each photo also carries a depth map (`<name>-depth.png`, from the offline
+  `scripts/build-depth.ts`), which `buildDepthMesh` turns into a displaced mesh
+  in front of the box. Its silhouettes are torn, not bridged; the box behind
+  shows the room's background plate (`buildBackgroundPlate`) once you step off
+  the capture point. From afar the mesh melts into a smoothed shape (`depthFar`).
+  The part of each photo in front of a doorway is a separate `DoorPatch` that
+  stays shut near the capture point and cross-fades open as you reach the door.
+  Keep all of this exact at the capture point: that is the one place a single
+  photo is the truth.
+- Keep modelled exterior geometry (window frames, canopy, lanterns) a few
+  centimetres clear of room wall planes. Anything within millimetres shows
+  through the photographed rooms as hairlines on 16-bit depth buffers.
 - `lib/tour/layout.ts` (plan geometry) and `lib/tour/walk-graph.ts` (stops and
   shortest paths) are pure TypeScript shared by the engine and `FloorPlan`.
 
@@ -107,4 +119,7 @@ when unconfigured — keep that behaviour when touching them.
 `public/panoramas/` holds 22 CC0 equirectangular captures, each as
 `<name>.jpg` (4096×2048) and `<name>-preview.jpg` (1024×512). The viewer loads
 the preview first, so both files must exist for every `pano` referenced by a
-tour space.
+tour space. `<name>-depth.png` is optional but should exist for every capture;
+regenerate it with `npx tsx scripts/build-depth.ts <name>` whenever that room's
+box changes, because it is stored relative to the box. The ONNX toolchain lives
+in the git-ignored `.depth/` directory; setup is in the script's header.

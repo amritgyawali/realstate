@@ -88,10 +88,21 @@ const PROJECTION_VERTEX = /* glsl */ `
   uniform float floorY;
   uniform float clampFloor;
   varying vec3 vWorld;
+  #ifdef DEPTH_BODY
+    // A reconstructed photo carries a second, smoothed shape; seen from far
+    // off (the next room, the dollhouse) it melts into that one, since fine
+    // relief only holds up near the point the photo was taken from.
+    attribute vec3 farPosition;
+    uniform float depthFar;
+  #endif
   #include <common>
   #include <clipping_planes_pars_vertex>
   void main() {
-    vec4 world = modelMatrix * vec4(position, 1.0);
+    vec3 local = position;
+    #ifdef DEPTH_BODY
+      local = mix(position, farPosition, depthFar);
+    #endif
+    vec4 world = modelMatrix * vec4(local, 1.0);
     // Outdoor domes: the lower hemisphere is flattened onto the deck, so the
     // photo's ground lands on a floor you can walk across.
     if (clampFloor > 0.5) world.y = max(world.y, floorY);
@@ -105,8 +116,10 @@ const PROJECTION_VERTEX = /* glsl */ `
 const PROJECTION_FRAGMENT = /* glsl */ `
   uniform sampler2D map;
   uniform sampler2D mapPrevious;
+  uniform sampler2D fillMap;
   uniform float hasMap;
   uniform float blend;
+  uniform float fillOn;
   uniform vec3 capture;
   uniform float heading;
   uniform float opacity;
@@ -150,12 +163,25 @@ const PROJECTION_FRAGMENT = /* glsl */ `
     float u2 = fract(t + 0.5) - 0.5;
     float u = fwidth(u1) < fwidth(u2) - 0.001 ? u1 : u2;
     float v = 0.5 + asin(clamp(d.y, -1.0, 1.0)) / PI;
+    vec2 uv = vec2(u, v);
+    vec2 gx = dFdx(uv);
+    vec2 gy = dFdy(uv);
     vec3 colour = fallback;
     if (hasMap > 0.5) {
-      colour = texture2D(map, vec2(u, v)).rgb;
+      colour = textureGrad(map, uv, gx, gy).rgb;
       // Sharpen from the preview to the full capture over a few frames instead
       // of popping.
-      if (blend < 0.999) colour = mix(texture2D(mapPrevious, vec2(u, v)).rgb, colour, blend);
+      if (blend < 0.999) colour = mix(textureGrad(mapPrevious, uv, gx, gy).rgb, colour, blend);
+      #ifndef NO_FILL
+        // A wall or floor the camera never saw (behind a sofa, past a
+        // doorframe) shows the photo's background plate there, the room with
+        // its furniture lifted out and the gap painted in, rather than a ghost
+        // of the sofa. It fades in as the visitor leaves the capture point.
+        if (fillOn > 0.001) {
+          vec4 plate = textureGrad(fillMap, uv, gx, gy);
+          colour = mix(colour, plate.rgb, plate.a * fillOn);
+        }
+      #endif
     }
     gl_FragColor = vec4(colour * exposure, opacity);
     #include <colorspace_fragment>
@@ -178,6 +204,12 @@ export type ProjectionMaterial = THREE.ShaderMaterial & {
     map: { value: THREE.Texture | null };
     mapPrevious: { value: THREE.Texture | null };
     blend: { value: number };
+    /** The photo with its furniture lifted out; alpha marks where it applies. */
+    fillMap: { value: THREE.Texture | null };
+    /** How much of the plate to show (0 at the capture point). */
+    fillOn: { value: number };
+    /** How far a reconstructed shape has melted into its smoothed form. */
+    depthFar: { value: number };
     hasMap: { value: number };
     capture: { value: THREE.Vector3 };
     heading: { value: number };
@@ -199,6 +231,9 @@ export function createProjectionMaterial(options: ProjectionOptions): Projection
       map: { value: null },
       mapPrevious: { value: null },
       blend: { value: 1 },
+      fillMap: { value: null },
+      fillOn: { value: 0 },
+      depthFar: { value: 0 },
       hasMap: { value: 0 },
       capture: { value: options.capture },
       heading: { value: options.heading * DEG },

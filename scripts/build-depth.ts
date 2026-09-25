@@ -32,7 +32,7 @@
 import { createRequire } from 'node:module';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { fallbackTours } from '../lib/data/tours';
+import { fallbackTours, toursBySlug } from '../lib/data/tours';
 import { hasPano, proxyDistance, spaceKind } from '../lib/tour/layout';
 import type { PropertyTour, TourNode } from '../lib/types';
 
@@ -305,7 +305,9 @@ async function main() {
   const only = new Set(process.argv.slice(2));
   const session = await ort.InferenceSession.create(MODEL, { intraOpNumThreads: 4 });
   const seen = new Set<string>();
-  for (const tour of fallbackTours) {
+  // Every tour, whether mapped to a listing or one of the demo houses.
+  const tours = [...new Set([...Object.values(toursBySlug), ...fallbackTours])];
+  for (const tour of tours) {
     for (const node of tour.nodes) {
       if (!hasPano(node) || seen.has(node.pano)) continue;
       if (only.size && !only.has(node.pano)) continue;

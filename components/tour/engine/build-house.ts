@@ -27,6 +27,7 @@ import {
 import {
   createProjectionMaterial,
   linkedClone,
+  withPortalExclusion,
   type Palette,
   type PortalUniforms,
   type ProjectionMaterial,
@@ -89,6 +90,13 @@ export interface DoorLeaf {
   door: DoorGeometry;
 }
 
+export interface DoorFrame {
+  door: DoorGeometry;
+  materials: THREE.MeshStandardMaterial[];
+  /** Current opacity, eased by the engine. */
+  shown: number;
+}
+
 export interface HouseBuild {
   rooms: Map<string, RoomBuild>;
   outdoor: Map<string, OutdoorBuild>;
@@ -98,6 +106,8 @@ export interface HouseBuild {
   /** Porch, steps, path and decks — the built parts of the grounds. */
   grounds: THREE.Group;
   casings: THREE.Group;
+  /** Each doorway's frame, with its own materials so it can fade in. */
+  frames: DoorFrame[];
   leaves: DoorLeaf[];
   /** Surfaces a visitor can stand on, for the floor cursor. */
   walkable: THREE.Object3D[];
@@ -196,7 +206,7 @@ export function buildHouse(
     patchMaterial.side = THREE.FrontSide;
     // The facade seen from this deck wears the same photograph; it needs its
     // own front-facing material, since the dome is drawn from the inside.
-    const shellMaterial = linkedClone(material);
+    const shellMaterial = linkedClone(material, { NO_FILL: 1 });
     shellMaterial.side = THREE.FrontSide;
     const patchGeometry = new Builder();
     patchGeometry.flat(node.rect, y - 0.015, true);
@@ -279,27 +289,27 @@ export function buildHouse(
   // --------------------------------------------------------------- doors --
 
   const leaves: DoorLeaf[] = [];
+  const doorFrames: DoorFrame[] = [];
   // Door frames are grouped by level so the dollhouse and floor plan can show
   // one level's frames without the others floating over it.
-  const frameSets = new Map<number, { trim: Builder; metal: Builder; group: THREE.Group }>();
-  const frameSet = (floor: number) => {
-    let set = frameSets.get(floor);
-    if (!set) {
-      const group = new THREE.Group();
+  const frameGroups = new Map<number, THREE.Group>();
+  const frameGroup = (floor: number) => {
+    let group = frameGroups.get(floor);
+    if (!group) {
+      group = new THREE.Group();
       group.userData.floor = floor;
       casings.add(group);
-      set = { trim: new Builder(), metal: new Builder(), group };
-      frameSets.set(floor, set);
+      frameGroups.set(floor, group);
     }
-    return set;
+    return group;
   };
   doors.forEach((door) => {
     const style = door.door.style ?? 'door';
     if (style === 'open') return;
-    const set = frameSet(door.floor);
+    const group = frameGroup(door.floor);
     // Slim frames read as doorways against the photographs; a deep pale
     // reveal stood out as a slab.
-    const target = style === 'glass' ? set.metal : set.trim;
+    const target = new Builder();
     const depth = style === 'arch' ? 0.2 : 0.24;
     const jamb = style === 'glass' ? 0.06 : style === 'arch' ? 0.07 : 0.09;
     const centre = doorCentre(door);
@@ -325,6 +335,15 @@ export function buildHouse(
       depth,
       door.axis,
     );
+    // Each frame owns its material: a doorway the photograph does not show
+    // fades its frame in only as a visitor walks up to it.
+    const frameMaterial = withPortalExclusion(
+      (style === 'glass' ? palette.metal : palette.doorLeaf).clone(),
+      portals,
+    );
+    group.add(new THREE.Mesh(target.build(), frameMaterial));
+    const frame: DoorFrame = { door, materials: [frameMaterial], shown: 1 };
+    doorFrames.push(frame);
 
     if (style === 'entrance') {
       // `normalA` points into space `a`; the leaves always swing indoors.
@@ -352,7 +371,9 @@ export function buildHouse(
           0.055,
           door.axis,
         );
-        const leaf = new THREE.Mesh(leafGeometry.build(), palette.doorLeaf);
+        const leafMaterial = withPortalExclusion(palette.doorLeaf.clone(), portals);
+        frame.materials.push(leafMaterial);
+        const leaf = new THREE.Mesh(leafGeometry.build(), leafMaterial);
         const handleGeometry = new Builder();
         const handleRun = -hingeSign * (leafWidth - 0.1);
         [-1, 1].forEach((face) => {
@@ -366,9 +387,11 @@ export function buildHouse(
             door.axis,
           );
         });
-        const handle = new THREE.Mesh(handleGeometry.build(), palette.brass);
+        const handleMaterial = withPortalExclusion(palette.brass.clone(), portals);
+        frame.materials.push(handleMaterial);
+        const handle = new THREE.Mesh(handleGeometry.build(), handleMaterial);
         pivot.add(leaf, handle);
-        set.group.add(pivot);
+        group.add(pivot);
 
         // Open inwards: pick the rotation that swings the free edge indoors.
         const probe = new THREE.Vector3(along.x * run, 0, along.z * run).applyAxisAngle(
@@ -379,12 +402,6 @@ export function buildHouse(
         leaves.push({ pivot, openAngle: sign * THREE.MathUtils.degToRad(96), door });
       }
     }
-  });
-  frameSets.forEach((set) => {
-    set.group.add(
-      new THREE.Mesh(set.trim.build(), palette.doorLeaf),
-      new THREE.Mesh(set.metal.build(), palette.metal),
-    );
   });
 
   // ------------------------------------------------------------- exterior --
@@ -432,25 +449,27 @@ export function buildHouse(
         outward,
       );
       // Frames and sills stay wholly outside the wall plane: anything that
-      // poked through would float inside the photographed room.
+      // poked through would float inside the photographed room. Their inner
+      // faces keep a few centimetres clear of it too, or a 16-bit depth buffer
+      // lets them flicker through the wall as hairlines.
       const axis = run.axis;
       const f = 0.06;
-      const ox = outward.x * 0.075;
-      const oz = outward.z * 0.075;
+      const ox = outward.x * 0.105;
+      const oz = outward.z * 0.105;
       frames.orientedBox(cx - (t.x * width) / 2 + ox, window.v0 + height / 2, cz - (t.z * width) / 2 + oz, f, height, 0.14, axis);
       frames.orientedBox(cx + (t.x * width) / 2 + ox, window.v0 + height / 2, cz + (t.z * width) / 2 + oz, f, height, 0.14, axis);
       frames.orientedBox(cx + ox, window.v1 + f / 2, cz + oz, width + f * 2, f, 0.14, axis);
       frames.orientedBox(
-        cx + outward.x * 0.11,
+        cx + outward.x * 0.14,
         window.v0 - 0.03,
-        cz + outward.z * 0.11,
+        cz + outward.z * 0.14,
         width + 0.16,
         0.05,
         0.2,
         axis,
       );
       if (width > 1.8) {
-        frames.orientedBox(cx + outward.x * 0.06, window.v0 + height / 2, cz + outward.z * 0.06, 0.05, height, 0.1, axis);
+        frames.orientedBox(cx + outward.x * 0.09, window.v0 + height / 2, cz + outward.z * 0.09, 0.05, height, 0.1, axis);
       }
     });
   });
@@ -510,7 +529,20 @@ export function buildHouse(
       new THREE.Vector3(node.rect.x + node.rect.w, y + (isInterior(node) ? wallTop(tour, node) - y : 1.1), node.rect.z + node.rect.d),
     );
   });
-  return { rooms, outdoor, stairs, shell, grounds, casings, leaves, walkable, solid, bounds, doors };
+  return {
+    rooms,
+    outdoor,
+    stairs,
+    shell,
+    grounds,
+    casings,
+    frames: doorFrames,
+    leaves,
+    walkable,
+    solid,
+    bounds,
+    doors,
+  };
 }
 
 /** Top of a space's outer walls: one storey, or more for a tall room. */
@@ -782,9 +814,10 @@ function buildEntrance(
     slabTop.flat({ x: box.x0, z: box.z0, w: box.x1 - box.x0, d: box.z1 - box.z0 }, stepTop + 0.001, true);
   }
 
-  // Canopy and a pair of lanterns.
+  // Canopy and a pair of lanterns, kept clear of the wall plane so neither
+  // shows through into the hall behind it.
   const canopy = new Builder();
-  const c0 = corner(-width / 2 - 0.2, -0.05);
+  const c0 = corner(-width / 2 - 0.2, 0.04);
   const c1 = corner(width / 2 + 0.2, depth + 0.35);
   const canopyY = y + door.height + 0.45;
   canopy.box(
@@ -797,7 +830,7 @@ function buildEntrance(
   );
   const lanterns = new Builder();
   [-1, 1].forEach((side) => {
-    const p = corner(side * (door.width / 2 + 0.42), 0.09);
+    const p = corner(side * (door.width / 2 + 0.42), 0.12);
     lanterns.box(p.x - 0.08, y + 1.65, p.z - 0.08, p.x + 0.08, y + 2.0, p.z + 0.08);
   });
 
@@ -851,8 +884,26 @@ export interface DepthMeshBuild {
   /** Ceiling triangles, hidden with the ceiling in the dollhouse. */
   ceiling: THREE.Mesh | null;
   material: ProjectionMaterial;
+  /** Where the photo shows furniture; see `buildBackgroundPlate`. */
+  mask: ForegroundMask;
+  /**
+   * The part of the photograph in front of each of the room's doorways. At
+   * the capture point it shows what the photographer saw there; walking up
+   * to the door fades it out to the next room beyond.
+   */
+  doors: DoorPatch[];
   /** Reconstructed depth along a world direction, as a fraction of the proxy. */
   ratioAt: (dir: { x: number; y: number; z: number }) => number;
+}
+
+export interface DoorPatch {
+  door: DoorGeometry;
+  mesh: THREE.Mesh;
+  material: ProjectionMaterial;
+  /** Distance from the capture point to the door, across the floor. */
+  reach: number;
+  /** Current opacity, eased by the engine. */
+  shown: number;
 }
 
 /** Sample a depth map along a direction in the photo's own frame. */
@@ -880,8 +931,8 @@ export function sampleDepth(depth: DepthMap, yawDeg: number, pitchDeg: number) {
 /**
  * Prepares a depth map for meshing: anything within a few percent of the room
  * box is snapped onto it, so walls, floors and ceilings are perfectly flat
- * instead of carrying the model's noise; then a small blur turns depth edges
- * into short ramps.
+ * instead of carrying the model's noise; then a light blur takes the grain off
+ * furniture without softening its outline.
  */
 export function smoothDepth(raw: DepthMap): DepthMap {
   const { width, height } = raw;
@@ -889,13 +940,14 @@ export function smoothDepth(raw: DepthMap): DepthMap {
   for (let k = 0; k < ratio.length; k += 1) {
     const root = raw.data[k * raw.stride] / 255;
     const r = root * root;
-    // 0.86–0.94 blends into 1: flat surfaces lock onto the box.
-    const t = Math.min(1, Math.max(0, (r - 0.86) / 0.08));
+    // 0.82–0.92 blends into 1: flat surfaces (glazing bars, pictures, the
+    // model's grain on a plain wall) lock onto the box.
+    const t = Math.min(1, Math.max(0, (r - 0.82) / 0.1));
     const snap = t * t * (3 - 2 * t);
     ratio[k] = r + (1 - r) * snap;
   }
   const blurred = new Float32Array(ratio.length);
-  const radius = 2;
+  const radius = 1;
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       let sum = 0;
@@ -917,15 +969,69 @@ export function smoothDepth(raw: DepthMap): DepthMap {
 }
 
 /**
+ * The shape a photo melts into when seen from far off: depth blurred over a
+ * few degrees and with only part of its relief, so a sofa that stood a metre
+ * from the camera reads as a soft rise rather than a torn cut-out when seen
+ * from the next room.
+ */
+export function meltDepth(depth: DepthMap, radius = 8, relief = 0.3): DepthMap {
+  const { width, height } = depth;
+  const a = new Float32Array(width * height);
+  for (let k = 0; k < a.length; k += 1) {
+    const root = Math.max(1, depth.data[k * depth.stride]) / 255;
+    a[k] = Math.log(root * root);
+  }
+  const b = new Float32Array(a.length);
+  const span = 2 * radius + 1;
+  // Two rounds of a separable running-sum box blur, wrapping round the seam
+  // horizontally and clamping at the poles.
+  for (let round = 0; round < 2; round += 1) {
+    for (let y = 0; y < height; y += 1) {
+      const row = y * width;
+      let sum = 0;
+      for (let dx = -radius; dx <= radius; dx += 1) sum += a[row + ((dx + width) % width)];
+      for (let x = 0; x < width; x += 1) {
+        b[row + x] = sum / span;
+        sum += a[row + ((x + radius + 1) % width)] - a[row + ((x - radius + width) % width)];
+      }
+    }
+    for (let x = 0; x < width; x += 1) {
+      let sum = 0;
+      for (let dy = -radius; dy <= radius; dy += 1) sum += b[Math.min(height - 1, Math.max(0, dy)) * width + x];
+      for (let y = 0; y < height; y += 1) {
+        a[y * width + x] = sum / span;
+        sum +=
+          b[Math.min(height - 1, y + radius + 1) * width + x] -
+          b[Math.max(0, y - radius) * width + x];
+      }
+    }
+  }
+  const data = new Uint8Array(a.length);
+  for (let k = 0; k < data.length; k += 1) {
+    data[k] = Math.round(Math.sqrt(Math.exp(a[k] * relief)) * 255);
+  }
+  return { data, width, height, stride: 1 };
+}
+
+/** Neighbouring depths further apart than this are a silhouette, not a slope. */
+const TEAR_RATIO = 1.18;
+const TEAR_GAP = 0.12;
+
+/**
  * Gives a photograph its shape back: a sphere of rays from the capture point,
  * each pushed out to the depth the photo was reconstructed at. Because every
  * vertex lies on its own ray, the photo still lines up exactly at the capture
  * point; anywhere else furniture stands off the floor instead of smearing
  * across it.
  *
- * Triangles that bridge a depth edge (the side of a sofa the camera never saw)
- * and triangles in front of a real doorway are left out; the room box behind
- * shows through those gaps, so nothing is ever empty.
+ * Silhouettes are torn rather than bridged, which would stretch a rubber sheet
+ * from the back of a sofa to the wall behind it. Through the tear the room box
+ * shows: exactly the photo at the capture point, and, as you step aside, the
+ * photo's background plate (`buildBackgroundPlate`). Seen from afar the mesh
+ * melts into a smoothed shape (`meltDepth`) and the tears close up. What lies
+ * in front of each doorway becomes a patch of its own (`DoorPatch`), so the
+ * photograph stays whole from the capture point and opens onto the next room
+ * as a visitor walks up to the door.
  */
 export function buildDepthMesh(
   tour: PropertyTour,
@@ -936,6 +1042,7 @@ export function buildDepthMesh(
   segments: number,
 ): DepthMeshBuild {
   const depth = smoothDepth(raw);
+  const melted = meltDepth(depth);
   const W = segments;
   const H = Math.round(segments / 2);
   const floorY = floorElevation(tour, node.floor);
@@ -946,7 +1053,10 @@ export function buildDepthMesh(
   const own = doors.filter((door) => door.door.a === node.id || door.door.b === node.id);
 
   const count = (W + 1) * (H + 1);
-  const positions = new Float32Array(count * 3);
+  const dirs = new Float32Array(count * 3);
+  const ratios = new Float32Array(count);
+  const distances = new Float32Array(count);
+  const meltedDistances = new Float32Array(count);
   const blocked = new Uint8Array(count);
   const up = new Uint8Array(count);
   const end = new THREE.Vector3();
@@ -958,24 +1068,66 @@ export function buildDepthMesh(
       const dir = panoDirection(node, yaw, pitch);
       const box = proxyDistance(tour, node, dir);
       const ratio = Math.abs(pitch) > 89.9 ? 1 : sampleDepth(depth, yaw, pitch);
-      const distance = box * ratio * 0.996;
-      positions[k * 3] = eye.x + dir.x * distance;
-      positions[k * 3 + 1] = eye.y + dir.y * distance;
-      positions[k * 3 + 2] = eye.z + dir.z * distance;
+      dirs[k * 3] = dir.x;
+      dirs[k * 3 + 1] = dir.y;
+      dirs[k * 3 + 2] = dir.z;
+      ratios[k] = ratio;
+      distances[k] = box * ratio * 0.996;
+      meltedDistances[k] = box * (Math.abs(pitch) > 89.9 ? 1 : sampleDepth(melted, yaw, pitch)) * 0.996;
       end.set(eye.x + dir.x * (box + 0.08), eye.y + dir.y * (box + 0.08), eye.z + dir.z * (box + 0.08));
-      if (own.some((door) => rayThroughDoor(eye, end, door))) blocked[k] = 1;
-      if (room && pitch > 0 && positions[k * 3 + 1] > ceilingY - 0.35) up[k] = 1;
+      const through = own.findIndex((door) => rayThroughDoor(eye, end, door));
+      if (through >= 0) blocked[k] = through + 1;
+      if (room && pitch > 0 && eye.y + dir.y * distances[k] > ceilingY - 0.35) up[k] = 1;
     }
   }
 
+  // Grid vertices first; each torn triangle then gets three vertices of its
+  // own, laid back to the far side of the silhouette.
+  const positions: number[] = [];
+  const meltedPositions: number[] = [];
+  const pushMelted = (k: number) => {
+    meltedPositions.push(
+      eye.x + dirs[k * 3] * meltedDistances[k],
+      eye.y + dirs[k * 3 + 1] * meltedDistances[k],
+      eye.z + dirs[k * 3 + 2] * meltedDistances[k],
+    );
+  };
+  for (let k = 0; k < count; k += 1) {
+    positions.push(
+      eye.x + dirs[k * 3] * distances[k],
+      eye.y + dirs[k * 3 + 1] * distances[k],
+      eye.z + dirs[k * 3 + 2] * distances[k],
+    );
+    pushMelted(k);
+  }
   const body: number[] = [];
   const ceiling: number[] = [];
-  // Depth edges are bridged rather than torn open: after smoothing they are
-  // short ramps, which read as a soft stretch when seen from one side, where
-  // a hole would show a jagged ghost of the furniture on the wall behind.
+  const patches = own.map(() => [] as number[]);
   const triangle = (a: number, b: number, c: number) => {
-    if (blocked[a] || blocked[b] || blocked[c]) return;
-    (up[a] && up[b] && up[c] ? ceiling : body).push(a, b, c);
+    const through = blocked[a] || blocked[b] || blocked[c];
+    if (through) {
+      // The photo in front of each doorway is a separate patch.
+      patches[through - 1].push(a, b, c);
+      return;
+    }
+    const target = up[a] && up[b] && up[c] ? ceiling : body;
+    const near = Math.min(ratios[a], ratios[b], ratios[c]);
+    const far = Math.max(ratios[a], ratios[b], ratios[c]);
+    const nearest = Math.min(distances[a], distances[b], distances[c]);
+    const farthest = Math.max(distances[a], distances[b], distances[c]);
+    if (far / near < TEAR_RATIO || farthest - nearest < TEAR_GAP) {
+      target.push(a, b, c);
+      return;
+    }
+    // Torn: in its detailed shape the triangle shrinks to a point (on the far
+    // side, where it cannot be seen); melted, it opens up again to bridge the
+    // smooth shape seen from afar.
+    const anchor = [a, b, c].find((k) => ratios[k] === far) ?? c;
+    target.push(...[a, b, c].map((k) => {
+      positions.push(positions[anchor * 3], positions[anchor * 3 + 1], positions[anchor * 3 + 2]);
+      pushMelted(k);
+      return positions.length / 3 - 1;
+    }));
   };
   for (let j = 0; j < H; j += 1) {
     for (let i = 0; i < W; i += 1) {
@@ -989,20 +1141,47 @@ export function buildDepthMesh(
     }
   }
 
-  const position = new THREE.BufferAttribute(positions, 3);
+  const position = new THREE.Float32BufferAttribute(positions, 3);
+  const farPosition = new THREE.Float32BufferAttribute(meltedPositions, 3);
   const make = (indices: number[]) => {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', position);
+    geometry.setAttribute('farPosition', farPosition);
     geometry.setIndex(indices);
     geometry.computeBoundingSphere();
     return geometry;
   };
-  const material = linkedClone(source, { NEAR_FADE: '0.32' });
+  const defines = { NEAR_FADE: '0.32', NO_FILL: 1, DEPTH_BODY: 1 };
+  const material = linkedClone(source, defines);
   material.side = THREE.DoubleSide;
-  const bodyMesh = tag(new THREE.Mesh(make(body), material), node.id, 'depth');
-  const ceilingMesh = ceiling.length
-    ? tag(new THREE.Mesh(make(ceiling), material), node.id, 'ceiling')
-    : null;
+  const mesh = (indices: number[], meshMaterial: ProjectionMaterial, surface: string) => {
+    const built = tag(new THREE.Mesh(make(indices), meshMaterial), node.id, surface);
+    // It changes shape on the GPU; the box around the capture point bounds it.
+    built.frustumCulled = false;
+    return built;
+  };
+  const bodyMesh = mesh(body, material, 'depth');
+  const ceilingMesh = ceiling.length ? mesh(ceiling, material, 'ceiling') : null;
+
+  const doorPatches: DoorPatch[] = [];
+  patches.forEach((indices, i) => {
+    if (!indices.length) return;
+    const door = own[i];
+    // Its own opacity, everything else shared with the room's photo.
+    const patchMaterial = linkedClone(source, defines);
+    patchMaterial.uniforms = { ...source.uniforms, opacity: { value: 1 } };
+    patchMaterial.side = THREE.FrontSide;
+    const patch = mesh(indices, patchMaterial, 'doorway');
+    patch.visible = false;
+    const centre = doorCentre(door);
+    doorPatches.push({
+      door,
+      mesh: patch,
+      material: patchMaterial,
+      reach: Math.hypot(centre.x - capture.x, centre.z - capture.z),
+      shown: 0,
+    });
+  });
 
   const heading = node.heading ?? 0;
   const ratioAt = (dir: { x: number; y: number; z: number }) => {
@@ -1010,7 +1189,182 @@ export function buildDepthMesh(
     const pitch = (Math.asin(Math.max(-1, Math.min(1, dir.y))) * 180) / Math.PI;
     return sampleDepth(depth, yaw, pitch);
   };
-  return { body: bodyMesh, ceiling: ceilingMesh, material, ratioAt };
+  return {
+    body: bodyMesh,
+    ceiling: ceilingMesh,
+    material,
+    mask: foregroundMask(depth),
+    doors: doorPatches,
+    ratioAt,
+  };
+}
+
+/** Where a photo shows something standing in front of its room's surfaces. */
+export interface ForegroundMask {
+  data: Uint8Array;
+  width: number;
+  height: number;
+}
+
+/**
+ * Half the depth map's resolution: 1 where the photo shows furniture (anything
+ * clearly in front of the room box), grown by two texels so what fills in
+ * behind it never picks up the object's own fringe.
+ */
+export function foregroundMask(depth: DepthMap): ForegroundMask {
+  const width = depth.width >> 1;
+  const height = depth.height >> 1;
+  const ratioAt = (x: number, y: number) => {
+    const root = depth.data[(y * depth.width + x) * depth.stride] / 255;
+    return root * root;
+  };
+  const fore = new Uint8Array(width * height);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const r = Math.min(
+        ratioAt(2 * x, 2 * y),
+        ratioAt(2 * x + 1, 2 * y),
+        ratioAt(2 * x, 2 * y + 1),
+        ratioAt(2 * x + 1, 2 * y + 1),
+      );
+      if (r < 0.93) fore[y * width + x] = 1;
+    }
+  }
+  const data = new Uint8Array(width * height);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      let hit = 0;
+      for (let dy = -2; dy <= 2 && !hit; dy += 1) {
+        const yy = y + dy;
+        if (yy < 0 || yy >= height) continue;
+        for (let dx = -2; dx <= 2; dx += 1) {
+          if (fore[yy * width + ((x + dx + width) % width)]) {
+            hit = 1;
+            break;
+          }
+        }
+      }
+      data[y * width + x] = hit;
+    }
+  }
+  return { data, width, height };
+}
+
+/**
+ * The background plate: the photograph with its furniture lifted out and the
+ * gaps painted in from the walls, floor and ceiling around them (pull-push:
+ * average the known pixels down a pyramid, then fill each gap from the level
+ * above). The room box shows it where a visitor who has stepped aside sees
+ * past a sofa to the wall the camera never saw. Alpha marks where it applies.
+ */
+export function buildBackgroundPlate(mask: ForegroundMask, photo: CanvasImageSource): THREE.DataTexture | null {
+  const { width, height } = mask;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) return null;
+  context.drawImage(photo, 0, 0, width, height);
+  const pixels = context.getImageData(0, 0, width, height).data;
+
+  interface Level {
+    rgb: Float32Array;
+    weight: Float32Array;
+    w: number;
+    h: number;
+  }
+  const base: Level = {
+    rgb: new Float32Array(width * height * 3),
+    weight: new Float32Array(width * height),
+    w: width,
+    h: height,
+  };
+  for (let k = 0; k < width * height; k += 1) {
+    const known = mask.data[k] ? 0 : 1;
+    base.weight[k] = known;
+    for (let c = 0; c < 3; c += 1) base.rgb[k * 3 + c] = pixels[k * 4 + c] * known;
+  }
+  const levels = [base];
+  while (levels[levels.length - 1].w > 2 && levels[levels.length - 1].h > 1) {
+    const fine = levels[levels.length - 1];
+    const w = fine.w >> 1;
+    const h = Math.max(1, fine.h >> 1);
+    const coarse: Level = { rgb: new Float32Array(w * h * 3), weight: new Float32Array(w * h), w, h };
+    for (let y = 0; y < h; y += 1) {
+      for (let x = 0; x < w; x += 1) {
+        let total = 0;
+        const sum = [0, 0, 0];
+        for (let dy = 0; dy < 2; dy += 1) {
+          const fy = Math.min(fine.h - 1, 2 * y + dy);
+          for (let dx = 0; dx < 2; dx += 1) {
+            const f = fy * fine.w + 2 * x + dx;
+            total += fine.weight[f];
+            for (let c = 0; c < 3; c += 1) sum[c] += fine.rgb[f * 3 + c] * fine.weight[f];
+          }
+        }
+        const k = y * w + x;
+        coarse.weight[k] = Math.min(1, total);
+        for (let c = 0; c < 3; c += 1) coarse.rgb[k * 3 + c] = total > 0 ? sum[c] / total : 0;
+      }
+    }
+    levels.push(coarse);
+  }
+  // Pull back down, filling each level's gaps from a bilinear read of the
+  // level above (wrapping round the seam).
+  for (let l = levels.length - 2; l >= 0; l -= 1) {
+    const fine = levels[l];
+    const coarse = levels[l + 1];
+    for (let y = 0; y < fine.h; y += 1) {
+      const cy = Math.min(coarse.h - 1, Math.max(0, (y + 0.5) * (coarse.h / fine.h) - 0.5));
+      const y0 = Math.floor(cy);
+      const y1 = Math.min(coarse.h - 1, y0 + 1);
+      const ty = cy - y0;
+      for (let x = 0; x < fine.w; x += 1) {
+        const k = y * fine.w + x;
+        const known = fine.weight[k];
+        if (known >= 1) continue;
+        const cx = (x + 0.5) * (coarse.w / fine.w) - 0.5;
+        const x0 = Math.floor(cx);
+        const tx = cx - x0;
+        const xa = ((x0 % coarse.w) + coarse.w) % coarse.w;
+        const xb = (xa + 1) % coarse.w;
+        for (let c = 0; c < 3; c += 1) {
+          const at = (xx: number, yy: number) => coarse.rgb[(yy * coarse.w + xx) * 3 + c];
+          const up =
+            (at(xa, y0) * (1 - tx) + at(xb, y0) * tx) * (1 - ty) +
+            (at(xa, y1) * (1 - tx) + at(xb, y1) * tx) * ty;
+          fine.rgb[k * 3 + c] = fine.rgb[k * 3 + c] * known + up * (1 - known);
+        }
+        fine.weight[k] = 1;
+      }
+    }
+  }
+
+  const data = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const k = y * width + x;
+      // Rows bottom-up, as the photo's own texture is uploaded.
+      const out = ((height - 1 - y) * width + x) * 4;
+      for (let c = 0; c < 3; c += 1) data[out + c] = Math.round(base.rgb[k * 3 + c]);
+      // A soft edge on the mask so the plate eases in around each object.
+      let sum = 0;
+      for (let dy = -1; dy <= 1; dy += 1) {
+        const yy = Math.min(height - 1, Math.max(0, y + dy));
+        for (let dx = -1; dx <= 1; dx += 1) sum += mask.data[yy * width + ((x + dx + width) % width)];
+      }
+      data[out + 3] = Math.round((sum / 9) * 255);
+    }
+  }
+  const texture = new THREE.DataTexture(data, width, height, THREE.RGBAFormat, THREE.UnsignedByteType);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = true;
+  texture.needsUpdate = true;
+  return texture;
 }
 
 /** Does the segment from `from` to `to` pass through a door's opening? */
@@ -1084,7 +1438,7 @@ function openingsFor(
     }));
 }
 
-function doorCentre(door: DoorGeometry) {
+export function doorCentre(door: DoorGeometry) {
   return door.axis === 'x' ? { x: door.plane, z: door.along } : { x: door.along, z: door.plane };
 }
 

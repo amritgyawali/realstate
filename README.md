@@ -68,6 +68,28 @@ here and there.
   themselves (the floor/wall line of a wall at distance *d* sits at
   `atan(1.6 / d)` below the horizon), and each photo is rotated so its own
   doorways land on the plan's doors.
+- **Every photo gets its shape back.** A single 360° photo has no depth, so on a
+  plain box a sofa is painted flat across the floor and smears as you walk.
+  `scripts/build-depth.ts` runs a monocular depth model (Depth Anything V2
+  Small) offline over each panorama, calibrates it against the room box, and
+  stores the result beside the photo as `<name>-depth.png`. The engine turns
+  that map into a displaced mesh, so furniture stands up off the floor and moves
+  against the wall behind it as you walk.
+  - Silhouettes are torn rather than stretched into rubber sheets. Where
+    stepping aside uncovers wall or floor the camera never saw, the room shows a
+    *background plate*: the photo with its furniture masked out and the gap
+    painted in from the surfaces around it. The plate is built at load.
+  - Up close (near the capture point) the mesh is detailed. Seen from afar, from
+    the next room or the dollhouse, it melts into a smoothed shape, since fine
+    relief only holds up near the capture point.
+  - A photo without a depth map simply keeps the box, so a new capture works
+    before it has been processed.
+- **Doorways open as you approach.** The photos do not always agree with the
+  plan about doorways: a photo may show a bookcase where the plan opens into the
+  kitchen. So each room keeps what its own photo shows in front of a doorway
+  until you are well on the way to that door, then cross-fades to the next room
+  and its door frame. From every capture point the room is exactly its
+  photograph, with no floating openings.
 - **Open-air spaces are domes.** Decks, terraces and trails are projected onto a
   large dome with a walkable floor. From indoors a dome may only be seen through
   its own doorway. Portal clipping cuts it (and everything else) to that opening,
@@ -80,9 +102,13 @@ here and there.
 - **The walk graph.** `lib/tour/walk-graph.ts` turns the plan into places to
   stand, about a stride and a half (1.5 m) apart: a lattice across each space
   anchored on its capture point, a stop either side of every door, a stop every
-  few treads, and the street-to-porch route. Walks are shortest paths on that
-  graph, eased and gently rounded at the corners, with the head turning along the
-  route and a slight step bob.
+  few treads, and the street-to-porch route. Room stops stay within 2.4 m of
+  the capture point (the region a single photo can honestly show), and any stop
+  that would stand you on a piece of furniture is hidden. Walks are shortest
+  paths on that graph, pulled taut within each room and followed along a smooth
+  (centripetal Catmull-Rom) curve. The pace eases in, cruises and brakes to a
+  stop, and the head turns with a critically damped ease, so there is no
+  overshoot and no bob.
 - **Four views of one model.** *Whole house* (exterior), *Walk* (eye height),
   *Dollhouse* (roof and ceilings lifted off, with any level isolated) and *Floor
   plan* (straight down). Switching views is always a camera flight.
@@ -96,7 +122,7 @@ here and there.
   front, which is enough for the dollhouse and for views through windows. The
   4096×2048 capture loads for the room you are in and the rooms one door away,
   and a small LRU budget (four on desktop, two on touch devices) keeps GPU memory
-  bounded.
+  bounded. The sharper photo cross-fades in over the preview rather than popping.
 - **Measurement.** Two taps anywhere on a wall or floor give a true 3D distance,
   because the rooms are real geometry. Readout toggles ft/m.
 
@@ -123,14 +149,42 @@ Saved board counts rooms walked.
 
 ### Panorama assets
 
-22 CC0 equirectangular captures live in `public/panoramas/`, each stored twice:
-`<name>.jpg` at 4096×2048 and `<name>-preview.jpg` at 1024×512. They are sourced
-from [Poly Haven](https://polyhaven.com) (CC0) and tone-mapped down from the 8K
-originals.
+22 CC0 equirectangular captures live in `public/panoramas/`, each as three
+files:
 
-To swap in real captures, drop a 2:1 equirectangular JPEG pair into
-`public/panoramas/` and reference the basename from a space's `pano` field. The
-more closely the room box matches the real room, the steadier the walk looks.
+- `<name>.jpg` at 4096×2048
+- `<name>-preview.jpg` at 1024×512
+- `<name>-depth.png`, the reconstructed depth at 1024×512
+
+They are sourced from [Poly Haven](https://polyhaven.com) (CC0) and
+tone-mapped down from the 8K originals.
+
+To use your own captures (for example 360° photos of the properties you list),
+work through these steps:
+
+1. Shoot each room from about eye height (1.6 m) near its middle, with any
+   360° camera that exports 2:1 equirectangular JPEGs.
+2. Save it as `public/panoramas/<name>.jpg` (4096×2048) and
+   `<name>-preview.jpg` (1024×512).
+3. Add the room to a tour in `lib/data/tours.ts` (see below). Measure its box
+   and set `capture` and `heading` so the photo's doorways land on the plan's
+   doors.
+4. Reconstruct its depth. The toolchain (ONNX runtime and model) stays out of
+   `package.json` and lives in `.depth/`, which is git-ignored:
+
+   ```bash
+   mkdir -p .depth && cd .depth
+   npm init -y && npm i --ignore-scripts onnxruntime-node jpeg-js pngjs
+   curl -L -o depth_anything_v2_vits.onnx \
+     https://github.com/fabio-sim/Depth-Anything-ONNX/releases/download/v2.0.0/depth_anything_v2_vits.onnx
+   cd .. && npx tsx scripts/build-depth.ts <name>   # or no argument for every panorama
+   ```
+
+   Each photo takes about ten seconds on a 4-core CPU. Re-run it whenever
+   you change a room's box, since the map is stored relative to it.
+
+The more closely the room box matches the real room, the steadier the walk
+looks.
 
 ### Adding or editing a tour
 
@@ -241,8 +295,9 @@ lib/
   smart-search.ts         Query parser + filter/sort engine
   format.ts               Currency conversion and display
   store.ts                Persisted session state (zustand)
-public/panoramas/         22 equirectangular captures, full + preview
-scripts/                  exFAT readlink shim + Next launcher (see below)
+public/panoramas/         22 equirectangular captures: full, preview, depth
+scripts/                  exFAT readlink shim + Next launcher (see below),
+                          build-depth.ts (offline depth reconstruction)
 ```
 
 Content in `lib/data/` was transcribed from the reference mockups — titles,

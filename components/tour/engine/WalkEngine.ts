@@ -26,9 +26,13 @@ import {
   type WalkGraph,
 } from '@/lib/tour/walk-graph';
 import {
+  buildBackgroundPlate,
   buildDepthMesh,
   buildHouse,
+  doorCentre,
   type DepthMeshBuild,
+  type DoorFrame,
+  type DoorPatch,
   type HouseBuild,
   type ProjectionMaterialHost,
 } from './build-house';
@@ -134,6 +138,9 @@ const MIN_FOV = 35;
 const MAX_FOV = 100;
 const WALK_FOV = 76;
 const MAX_PITCH = 80;
+/** Distances from a capture point over which its reconstruction smooths out. */
+const MELT_FROM = 1.9;
+const MELT_TO = 3.9;
 
 /**
  * The walkover engine.
@@ -232,6 +239,10 @@ export class WalkEngine {
   private infoPoints = new Map<string, { point: THREE.Vector3; label: string; body: string }[]>();
   /** Reconstructed shape of each photographed space, once its depth map loads. */
   private depth = new Map<string, DepthMeshBuild>();
+  /** Each room's photo with the furniture lifted out. */
+  private plates = new Map<string, THREE.DataTexture>();
+  /** The view the doorway patches were last settled for. */
+  private doorwaysMode = '';
   /** Lattice stops that would stand the visitor on a piece of furniture. */
   private occupied = new Set<number>();
   /** Photo materials currently sharpening from preview to full resolution. */
@@ -304,6 +315,11 @@ export class WalkEngine {
     });
     this.house.rooms.forEach((room) => {
       room.material.clippingPlanes = cut;
+    });
+    this.house.frames.forEach((frame) => {
+      frame.materials.forEach((material) => {
+        material.clippingPlanes = cut;
+      });
     });
     this.house.outdoor.forEach((space) => {
       (space.patch.material as ProjectionMaterial).clippingPlanes = cut;
@@ -631,6 +647,7 @@ export class WalkEngine {
       slot.full?.dispose();
     });
     this.textures.clear();
+    this.plates.forEach((plate) => plate.dispose());
     this.environment.dispose();
     this.surfaces.dispose();
     this.renderer.dispose();
@@ -953,6 +970,7 @@ export class WalkEngine {
     active = this.updateFade(dt) || active;
     active = this.updateBlends(dt) || active;
     active = this.updateDoors(dt) || active;
+    active = this.updateDoorways(dt) || active;
     this.updateMarkers();
 
     if (active || this.measurePoints.length) {
@@ -1318,6 +1336,82 @@ export class WalkEngine {
     return true;
   }
 
+  /**
+   * The photographs do not agree with the plan about every doorway: a photo
+   * may show a bookcase where the plan opens into the kitchen. So each room
+   * keeps its own photo in front of a doorway (the door patch) while the
+   * visitor is anywhere near where it was taken, and only opens it onto the
+   * next room as they walk up to the door; the doorway's modelled frame fades
+   * in as the patch fades out. From the capture point every room is exactly
+   * its photograph.
+   */
+  private updateDoorways(dt: number) {
+    const walk = this.mode === 'walk';
+    const eye = this.camera.position;
+    // Arriving from another view (the dollhouse, the street) doorways start
+    // in their resting state rather than fading in after the landing.
+    const snap = this.mode !== this.doorwaysMode;
+    this.doorwaysMode = this.mode;
+    const rate = snap ? 1 : 1 - Math.exp(-dt * (this.reducedMotion ? 30 : 9));
+    let changed = false;
+    const ease = (current: number, goal: number) => {
+      const next = Math.abs(goal - current) < 0.003 ? goal : current + (goal - current) * rate;
+      if (next !== current) changed = true;
+      return next;
+    };
+    const frameGoal = new Map<DoorFrame['door'], number>();
+    this.depth.forEach((build, id) => {
+      const dome = this.house.outdoor.get(id)?.dome;
+      // Detailed near where the photo was taken, smoothed seen from afar.
+      const node = nodeById(this.tour, id);
+      if (node) {
+        const capture = captureOf(node);
+        const away = Math.hypot(
+          eye.x - capture.x,
+          eye.y - floorElevation(this.tour, node.floor) - EYE_HEIGHT,
+          eye.z - capture.z,
+        );
+        const melt = THREE.MathUtils.smoothstep(away, MELT_FROM, MELT_TO);
+        const uniforms = build.material.uniforms;
+        if (Math.abs(uniforms.depthFar.value - melt) > 0.002) {
+          uniforms.depthFar.value = melt;
+          changed = true;
+        }
+        const fill = uniforms.fillMap.value ? THREE.MathUtils.smoothstep(away, 0.05, 0.7) : 0;
+        if (Math.abs(uniforms.fillOn.value - fill) > 0.002) {
+          uniforms.fillOn.value = fill;
+          changed = true;
+        }
+      }
+      build.doors.forEach((patch) => {
+        const open = walk ? doorwayOpening(eye, patch) : 1;
+        // A frame only waits on the photo of the room the visitor is in (or
+        // looking into), never on one behind the door they are facing.
+        const door = patch.door;
+        const centre = doorCentre(door);
+        const facing = (eye.x - centre.x) * door.normalA.x + (eye.z - centre.z) * door.normalA.z;
+        const onSide = door.door.a === id ? facing > 0 : facing < 0;
+        if (walk && onSide) frameGoal.set(door, Math.min(frameGoal.get(door) ?? 1, open));
+        // Never a veil across the lens: right at the door the patch is gone.
+        const atDoor = Math.hypot(eye.x - centre.x, eye.z - centre.z) < 0.7;
+        if (atDoor && walk) {
+          if (patch.shown !== 0) changed = true;
+          patch.shown = 0;
+        } else {
+          patch.shown = ease(patch.shown, walk ? 1 - open : 0);
+        }
+        showPatch(patch);
+        // An open-air space's patch lives and dies with its dome.
+        if (dome && !dome.visible) patch.mesh.visible = false;
+      });
+    });
+    this.house.frames.forEach((frame) => {
+      frame.shown = ease(frame.shown, frameGoal.get(frame.door) ?? 1);
+      showFrame(frame);
+    });
+    return changed;
+  }
+
   private updateMarkers() {
     if (!this.markers.visible) return;
     const key = `${this.stop}:${this.space}:${this.hoverStop}:${this.motion ? this.motion.target : -1}`;
@@ -1389,18 +1483,39 @@ export class WalkEngine {
         );
         const room = this.house.rooms.get(node.id);
         if (room) {
+          build.doors.forEach((patch) => room.group.add(patch.mesh));
           room.group.add(build.body);
           if (build.ceiling) room.group.add(build.ceiling);
         } else {
+          build.doors.forEach((patch) => this.world.add(patch.mesh));
           this.world.add(build.body);
         }
         this.depth.set(node.id, build);
+        this.attachPlate(node);
         this.placeInfoPoints(node);
         this.markOccupied(node, build);
         this.applyScene();
       };
       image.src = `/panoramas/${node.pano}-depth.png`;
     });
+  }
+
+  /**
+   * A room's background plate (see buildBackgroundPlate) needs both its depth
+   * map and its photo, whichever arrives last. The room box behind the
+   * reconstruction shows it where stepping aside uncovers what the camera
+   * never saw. Out of doors that would be the sky, so domes keep the photo.
+   */
+  private attachPlate(node: TourNode) {
+    const room = this.house.rooms.get(node.id);
+    const build = this.depth.get(node.id);
+    const photo = node.pano ? this.textures.get(node.pano)?.preview?.image : undefined;
+    if (!room || !build || !photo || this.plates.has(node.id)) return;
+    const plate = buildBackgroundPlate(build.mask, photo as CanvasImageSource);
+    if (!plate) return;
+    this.plates.set(node.id, plate);
+    room.material.uniforms.fillMap.value = plate;
+    this.needsRender = true;
   }
 
   /** Lattice stops whose floor spot is taken by furniture in the photo. */
@@ -1438,6 +1553,9 @@ export class WalkEngine {
           const slot = this.slot(node.pano);
           slot.preview = texture;
           if (!slot.full) this.assign(node.pano, texture);
+          captureNodes(this.tour)
+            .filter((other) => other.pano === node.pano)
+            .forEach((other) => this.attachPlate(other));
         })
         .catch(() => undefined)
         .finally(() => {
@@ -2008,6 +2126,48 @@ export class WalkEngine {
 }
 
 // ----------------------------------------------------------------- utils ---
+
+/**
+ * Whether a room's photo has opened onto a doorway (1 = the next room, 0 = the
+ * photo). It opens once the visitor is well on the way to the door and never
+ * at the capture point; the switch itself is eased into a short cross-fade, so
+ * at rest a doorway is always one or the other, never a ghost of both. A
+ * little hysteresis keeps it from flickering at the threshold.
+ */
+function doorwayOpening(eye: THREE.Vector3, patch: DoorPatch) {
+  const centre = doorCentre(patch.door);
+  const distance = Math.hypot(
+    eye.x - centre.x,
+    (eye.y - patch.door.bottom - EYE_HEIGHT) * 2,
+    eye.z - centre.z,
+  );
+  const threshold = Math.min(Math.max(patch.reach * 0.5, 1.3), 2.1, patch.reach * 0.8);
+  const opened = patch.shown < 0.5;
+  return distance < threshold + (opened ? 0.2 : 0) ? 1 : 0;
+}
+
+function showPatch(patch: DoorPatch) {
+  const opacity = patch.shown;
+  const solid = opacity > 0.997;
+  patch.mesh.visible = opacity > 0.003;
+  patch.material.uniforms.opacity.value = solid ? 1 : opacity;
+  patch.material.transparent = !solid;
+  patch.material.depthWrite = solid;
+}
+
+function showFrame(frame: DoorFrame) {
+  const opacity = frame.shown;
+  const solid = opacity > 0.997;
+  frame.materials.forEach((material) => {
+    material.visible = opacity > 0.003;
+    material.opacity = solid ? 1 : opacity;
+    if (material.transparent !== !solid) {
+      material.transparent = !solid;
+      material.needsUpdate = true;
+    }
+    material.depthWrite = solid;
+  });
+}
 
 function writePortal(door: DoorGeometry, a: THREE.Vector4, b: THREE.Vector2) {
   a.set(door.plane, door.along, door.bottom - 0.05, door.axis === 'x' ? 0 : 1);
