@@ -7,11 +7,12 @@ import { ListingBrowser } from '@/components/listing/ListingBrowser';
 import { ListingSkeleton } from '@/components/listing/ListingSkeleton';
 import { properties, tourProperties } from '@/lib/data/properties';
 import { getTour } from '@/lib/data/tours';
+import { captureNodes } from '@/lib/tour/layout';
 
 export const metadata: Metadata = {
   title: '3D/360° Tours',
   description:
-    'Walk through luxury homes in 3D and 360°. Room-to-room virtual walkover tours with floor plans, dollhouse view and on-screen measurement — no plugin required.',
+    'Walk through luxury homes in 3D and 360°. Step-by-step virtual walkover tours — from the street, through the front door and up the stairs — with floor plans, dollhouse view and on-screen measurement. No plugin required.',
 };
 
 const HEADER_BACKDROP =
@@ -41,7 +42,7 @@ export default function ToursPage() {
             </div>
             <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-[11px] sm:grid-cols-4">
               {[
-                ['fa-person-walking', 'Room-to-room walk'],
+                ['fa-person-walking', 'Step-by-step walk'],
                 ['fa-table-cells-large', 'Floor plan & dollhouse'],
                 ['fa-ruler', 'On-screen measuring'],
                 ['fa-vr-cardboard', 'Matterport-ready'],
@@ -63,7 +64,7 @@ export default function ToursPage() {
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={`/panoramas/${tour.nodes[0].pano}-preview.jpg`}
+                  src={`/panoramas/${captureNodes(tour)[0].pano}-preview.jpg`}
                   alt=""
                   className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
                   loading="lazy"
@@ -72,7 +73,7 @@ export default function ToursPage() {
                 <span className="relative p-3">
                   <span className="block text-[12px] font-semibold">{tour.title}</span>
                   <span className="block text-[10px] uppercase tracking-widest text-white/60">
-                    {tour.nodes.length} rooms · {tour.floors.length} levels
+                    {captureNodes(tour).length} rooms · {tour.floors.length} levels
                   </span>
                 </span>
               </Link>

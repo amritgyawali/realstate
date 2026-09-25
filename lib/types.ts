@@ -5,11 +5,9 @@ export type ListingStatus = 'Active' | 'Pending' | 'Auction' | 'New' | 'Sold';
 /** Which engine renders a property's immersive media. */
 export type TourProvider = 'panorama' | 'matterport' | 'streetview' | 'video';
 
+/** An information marker placed in a panorama, in the photo's own yaw/pitch. */
 export interface TourHotspot {
-  /** Destination node id for `nav` hotspots. */
-  to?: string;
-  kind: 'nav' | 'info';
-  /** Yaw in degrees, 0 = forward, positive = clockwise from above. */
+  /** Yaw in degrees in panorama space: 0 = the photo's forward, positive = clockwise. */
   yaw: number;
   /** Pitch in degrees, negative = downward. */
   pitch: number;
@@ -17,17 +15,91 @@ export interface TourHotspot {
   body?: string;
 }
 
+/** Axis-aligned plan rectangle in metres: x runs east, z runs south (down the plan). */
+export interface TourRect {
+  x: number;
+  z: number;
+  w: number;
+  d: number;
+}
+
+/**
+ * - `room` — an enclosed space; its panorama is projected onto a box of `rect` x `height`.
+ * - `outdoor` — a deck, terrace or trail; its panorama is projected onto a far dome.
+ * - `stair` — a modelled stair hall with no photograph (see `TourStair`).
+ */
+export type TourSpaceKind = 'room' | 'outdoor' | 'stair';
+
+/**
+ * One space in the house. Rooms and outdoor spaces carry a captured 360°
+ * panorama; the engine projects it from `capture` onto the space's geometry, so
+ * the camera can physically walk through the room instead of cutting between
+ * photographs.
+ */
 export interface TourNode {
   id: string;
   name: string;
-  /** Basename in /public/panoramas — `<pano>.jpg` and `<pano>-preview.jpg`. */
-  pano: string;
+  kind?: TourSpaceKind;
+  /** Basename in /public/panoramas — `<pano>.jpg` and `<pano>-preview.jpg`. Absent on stair halls. */
+  pano?: string;
   floor: number;
-  /** Normalised 0-1 position on the floor plan, used by the minimap. */
-  plan: { x: number; y: number };
-  /** Yaw the camera faces when the node is entered, in degrees. */
-  entryYaw: number;
-  hotspots: TourHotspot[];
+  /** Footprint on the plan, in metres. */
+  rect: TourRect;
+  /** Ceiling height in metres. Defaults to 3. */
+  height?: number;
+  /** Where the panorama was shot, in plan metres. Defaults to the centre of `rect`. */
+  capture?: { x: number; z: number };
+  /**
+   * World heading, in degrees, that the photo's yaw 0 points at once placed in the
+   * house (0 = north / -z, 90 = east). Chosen so the photo's walls and doorways
+   * line up with the plan.
+   */
+  heading?: number;
+  /** World yaw to face when a walk ends at this space's capture point. */
+  view?: number;
+  hotspots?: TourHotspot[];
+}
+
+/**
+ * An opening between two spaces. Doors are the single source of truth for the
+ * walk graph: the engine, floor plan, dollhouse and minimap all derive their
+ * routes from them. `b: 'outside'` is the front door to the grounds.
+ */
+export interface TourDoor {
+  a: string;
+  b: string;
+  /** Centre of the opening on the shared wall, in plan metres. */
+  x: number;
+  z: number;
+  width?: number;
+  height?: number;
+  /** `entrance` swings open as a visitor approaches; `open` has no frame at all. */
+  style?: 'door' | 'arch' | 'glass' | 'entrance' | 'open';
+}
+
+/** A straight flight between a stair hall on one level and its landing above. */
+export interface TourStair {
+  /** The stair-hall space the flight starts in. */
+  from: string;
+  /** The landing space it arrives in, one level up. */
+  to: string;
+  /** Footprint of the flight itself. */
+  run: TourRect;
+  /** Compass direction of travel going up. */
+  ascent: 'n' | 's' | 'e' | 'w';
+}
+
+export interface TourSite {
+  /** Landscape and sky treatment around the house. */
+  setting: 'alpine' | 'coastal' | 'desert';
+  /** Facade treatment for the modelled exterior. */
+  facade: 'timber' | 'stucco' | 'stone';
+  /** Floor-to-floor height in metres. */
+  storey: number;
+  /** Height of the ground floor above the garden, in metres. */
+  plinth: number;
+  /** Street-to-porch route, walked step by step before the front door. */
+  approach: { x: number; z: number; label?: string }[];
 }
 
 export interface TourFloor {
@@ -46,8 +118,13 @@ export interface PropertyTour {
   title: string;
   capturedBy: string;
   scanDate: string;
+  /** Every space in the house. Rooms with a `pano` are the capture points. */
   nodes: TourNode[];
+  doors: TourDoor[];
+  stairs: TourStair[];
+  site: TourSite;
   floors: TourFloor[];
+  /** The space the front door opens into. */
   startNode: string;
 }
 
