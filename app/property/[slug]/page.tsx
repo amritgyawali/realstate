@@ -13,6 +13,7 @@ import { AgentPortrait } from '@/components/professionals/AgentPortrait';
 import { properties, propertyBySlug } from '@/lib/data/properties';
 import { agentBySlug } from '@/lib/data/agents';
 import { getTour } from '@/lib/data/tours';
+import { captureNodes } from '@/lib/tour/layout';
 import { RegentsStar } from '@/components/layout/Crest';
 import { formatArea, formatDate, locationLabel } from '@/lib/format';
 
@@ -203,7 +204,7 @@ export default async function PropertyPage({
                   <Resource
                     label="3D Walkover"
                     href={`/property/${property.slug}/tour`}
-                    note={`${tour.title} — ${tour.nodes.length} capture points`}
+                    note={`${tour.title} — ${captureNodes(tour).length} capture points`}
                   />
                 </div>
               )}

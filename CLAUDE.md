@@ -70,15 +70,33 @@ system above. `tailwind.config.ts` still carries the `brand.*` / `luxury.*` /
 
 ## The tour engine
 
-`components/tour/panorama-engine.ts` is plain `three.js`, deliberately not
-React-reconciled: the render loop owns its own state and only pushes projected
-hotspot positions back to React. Do not move view state into React — dragging
-would then re-render the 3D layer every frame.
+The walkover is continuous: a tour opens on the whole house from outside, walks
+up the path, through the front door and on through the house one step at a time
+— through doorways, up the stairs. Never reintroduce a jump-cut between rooms;
+every way of choosing a room (door label, room strip, minimap, floor plan,
+number keys) walks the route there.
 
-Tour scene graphs are hand-authored in `lib/data/tours.ts`. Nav hotspots are the
-single source of truth for the walk graph; the floor plan, dollhouse and minimap
-all derive their edges from them, so adding a route means adding a hotspot, not
-editing a map.
+- `components/tour/engine/WalkEngine.ts` is plain `three.js`, deliberately not
+  React-reconciled: the render loop owns its own state and publishes labels and
+  position through the small stores in `engine-store.ts`. Do not move view state
+  into React — dragging would then re-render the 3D layer every frame.
+- `build-house.ts` builds the model from the plan: each photographed room is a
+  box (real footprint, door openings) with its panorama projected from its
+  capture point (`materials.ts`); decks and terraces are photo domes seen only
+  through their doorways (portal clipping); stairs, door frames, facade, roofs,
+  porch and grounds are modelled. `environment.ts` is the sky, ground, street and
+  planting.
+- `lib/tour/layout.ts` (plan geometry) and `lib/tour/walk-graph.ts` (stops and
+  shortest paths) are pure TypeScript shared by the engine and `FloorPlan`.
+
+Tours are small architectural models in `lib/data/tours.ts`: spaces with `rect`,
+`capture`, `heading`, plus `doors`, `stairs` and a `site` with the street-to-porch
+`approach`. Doors are the single source of truth for the walk graph; the floor
+plan, dollhouse and minimap all derive their routes from them, so adding a route
+means adding a door, not editing a map. Room boxes were measured off the photos
+(floor/wall line at `atan(1.6 / distance)` below the horizon) and `heading` turns
+each photo so its own doorways land on the plan's doors — keep both when editing
+a room, or the projection will drift.
 
 Matterport and Street View are adapters (`MatterportEmbed`, `StreetViewEmbed`)
 that sit beside the built-in engine, not replacements. Both degrade to a link
@@ -89,4 +107,4 @@ when unconfigured — keep that behaviour when touching them.
 `public/panoramas/` holds 22 CC0 equirectangular captures, each as
 `<name>.jpg` (4096×2048) and `<name>-preview.jpg` (1024×512). The viewer loads
 the preview first, so both files must exist for every `pano` referenced by a
-tour node.
+tour space.

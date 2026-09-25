@@ -1,243 +1,229 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo } from 'react';
 import type { PropertyTour } from '@/lib/types';
+import {
+  OUTSIDE,
+  doorGeometries,
+  floorBounds,
+  hasPano,
+  isInterior,
+  spaceKind,
+} from '@/lib/tour/layout';
+import type { EnginePose } from './engine/WalkEngine';
 
 interface FloorPlanProps {
   tour: PropertyTour;
-  activeNodeId: string;
+  level: number;
+  /** Live position and heading of the visitor, when they are on this level. */
+  pose?: EnginePose | null;
+  activeSpace?: string;
   visited: string[];
-  /** `mini` docks in the corner, `plan` is the schematic, `dollhouse` is the 3D-ish view. */
-  variant: 'mini' | 'plan' | 'dollhouse';
-  onSelect: (nodeId: string) => void;
-  onClose?: () => void;
+  /** `mini` docks in the corner; `panel` is the large schematic. */
+  variant: 'mini' | 'panel';
+  onSelect: (spaceId: string) => void;
 }
+
+const PAD = 1.6;
 
 /**
- * Floor plan, minimap and dollhouse are the same graph drawn three ways.
- *
- * Nodes sit at their normalised plan coordinates; the edges are the same `nav`
- * hotspots the walk mode uses, so the map can never drift out of sync with where
- * a visitor can actually go. The dollhouse variant applies an isometric skew and
- * lifts upper floors on the Y axis to suggest stacked levels.
+ * The plan of one level, drawn from the same footprints and doors the engine
+ * builds the house from — so the map can never disagree with where a visitor
+ * can actually walk. Rooms are buttons: choosing one walks there step by step.
  */
-/** Label placements cycled through in the dollhouse view, in order. */
-const LABEL_SLOTS = [
-  'left-1/2 top-full mt-1.5 -translate-x-1/2',
-  'left-1/2 bottom-full mb-1.5 -translate-x-1/2',
-  'left-full top-1/2 ml-2 -translate-y-1/2',
-  'right-full top-1/2 mr-2 -translate-y-1/2',
-];
-
-export function FloorPlan({
-  tour,
-  activeNodeId,
-  visited,
-  variant,
-  onSelect,
-  onClose,
-}: FloorPlanProps) {
-  const [floor, setFloor] = useState<number | 'all'>(
-    variant === 'dollhouse' ? 'all' : tour.nodes.find((n) => n.id === activeNodeId)?.floor ?? 1,
-  );
-
-  const nodes = tour.nodes.filter((n) => (floor === 'all' ? true : n.floor === floor));
-  const edges = tour.nodes.flatMap((from) =>
-    from.hotspots
-      .filter((h) => h.kind === 'nav' && h.to)
-      .map((h) => {
-        const to = tour.nodes.find((n) => n.id === h.to);
-        if (!to) return null;
-        if (floor !== 'all' && (from.floor !== floor || to.floor !== floor)) return null;
-        return { from, to };
-      })
-      .filter(Boolean as unknown as (v: unknown) => v is { from: typeof from; to: typeof from }),
-  );
-
+export function FloorPlan({ tour, level, pose, activeSpace, visited, variant, onSelect }: FloorPlanProps) {
   const mini = variant === 'mini';
-  const dollhouse = variant === 'dollhouse';
-
-  // Nodes are inset from the frame so a marker at x = 0.95 still has room for
-  // its centred label; without this the outermost rooms clip at the edge.
-  const INSET = mini ? 0.08 : 0.14;
-  const fit = (value: number) => INSET + value * (1 - INSET * 2);
-
-  // Dollhouse: isometric skew, with each level offset upward.
-  const project = (x: number, y: number, level: number) => {
-    if (!dollhouse) return { left: `${fit(x) * 100}%`, top: `${fit(y) * 100}%` };
-    const skewX = x - 0.5;
-    const skewY = y - 0.5;
-    const isoX = 0.5 + (skewX - skewY) * 0.46;
-    const isoY = 0.56 + (skewX + skewY) * 0.34 - (level - 1) * 0.3;
-    return { left: `${isoX * 100}%`, top: `${isoY * 100}%` };
+  const bounds = useMemo(() => floorBounds(tour), [tour]);
+  const doors = useMemo(() => doorGeometries(tour), [tour]);
+  const view = {
+    x: bounds.x - PAD,
+    y: bounds.z - PAD,
+    w: bounds.w + PAD * 2,
+    h: bounds.d + PAD * 2,
   };
+  const nodes = tour.nodes.filter((node) => node.floor === level);
+  const below = tour.nodes.filter((node) => node.floor === level - 1 && isInterior(node));
+  const stroke = mini ? 0.12 : 0.09;
 
   return (
-    <div
-      className={[
-        'relative',
-        mini
-          ? 'rounded-xs border border-white/12 bg-ink-950/75 p-2 backdrop-blur-md'
-          : 'w-full max-w-3xl rounded-xs border border-white/12 bg-ink-950 p-5',
-      ].join(' ')}
+    <svg
+      viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
+      className="block h-full w-full"
+      role="group"
+      aria-label={`Floor plan — ${tour.floors.find((f) => f.level === level)?.name ?? `Level ${level}`}`}
     >
-      {!mini && (
-        <div className="mb-4 flex items-start justify-between">
-          <div>
-            <h3 className="font-serif-title text-lg text-white">
-              {dollhouse ? 'Dollhouse' : 'Floor Plan'}
-            </h3>
-            <p className="text-[11px] text-white/50">
-              {tour.title} · {tour.nodes.length} capture points ·{' '}
-              {tour.floors.reduce((sum, f) => sum + f.area, 0).toLocaleString('en-US')} sqft
-            </p>
-          </div>
-          {onClose && (
-            <button type="button" className="tour-btn" onClick={onClose} aria-label="Close">
-              <i className="fa-solid fa-xmark" aria-hidden="true" />
-            </button>
-          )}
-        </div>
-      )}
+      <defs>
+        <pattern id={`hatch-${variant}`} width="0.35" height="0.35" patternUnits="userSpaceOnUse">
+          <path d="M0 0.35 L0.35 0" stroke="rgba(255,255,255,0.18)" strokeWidth="0.05" />
+        </pattern>
+      </defs>
 
-      {/* Floor selector */}
-      {(tour.floors.length > 1 || dollhouse) && (
-        <div
-          className={[
-            'flex items-center gap-1',
-            mini ? 'mb-1.5' : 'mb-3',
-          ].join(' ')}
-        >
-          {dollhouse && (
-            <FloorChip active={floor === 'all'} mini={mini} onClick={() => setFloor('all')}>
-              All
-            </FloorChip>
-          )}
-          {tour.floors.map((f) => (
-            <FloorChip
-              key={f.level}
-              active={floor === f.level}
-              mini={mini}
-              onClick={() => setFloor(f.level)}
-            >
-              {mini ? `L${f.level}` : f.name}
-            </FloorChip>
-          ))}
-        </div>
-      )}
+      {/* The level below, as a faint footprint for orientation. */}
+      {below.map((node) => (
+        <rect
+          key={`below-${node.id}`}
+          x={node.rect.x}
+          y={node.rect.z}
+          width={node.rect.w}
+          height={node.rect.d}
+          fill="rgba(255,255,255,0.025)"
+          stroke="rgba(255,255,255,0.12)"
+          strokeWidth={stroke * 0.6}
+          strokeDasharray="0.3 0.25"
+        />
+      ))}
 
-      <div
-        className={[
-          'relative w-full overflow-hidden rounded-sm border border-white/10',
-          mini ? 'aspect-[4/3]' : dollhouse ? 'aspect-[16/9]' : 'aspect-[16/10]',
-        ].join(' ')}
-        style={{
-          backgroundImage:
-            'linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.045) 1px, transparent 1px)',
-          backgroundSize: mini ? '14px 14px' : '28px 28px',
-          backgroundColor: 'rgba(12, 16, 22, 0.85)',
-        }}
-      >
-        {/* Walk graph */}
-        <svg className="absolute inset-0 h-full w-full" aria-hidden="true">
-          {edges.map(({ from, to }, index) => {
-            const a = project(from.plan.x, from.plan.y, from.floor);
-            const b = project(to.plan.x, to.plan.y, to.floor);
-            const crossFloor = from.floor !== to.floor;
-            return (
-              <line
-                key={`${from.id}-${to.id}-${index}`}
-                x1={a.left}
-                y1={a.top}
-                x2={b.left}
-                y2={b.top}
-                stroke={crossFloor ? 'rgba(197,168,105,0.5)' : 'rgba(255,255,255,0.28)'}
-                strokeWidth={mini ? 1 : 1.5}
-                strokeDasharray={crossFloor ? '4 3' : undefined}
+      {nodes.map((node) => {
+        const kind = spaceKind(node);
+        const active = node.id === activeSpace;
+        const seen = visited.includes(node.id);
+        const fill =
+          kind === 'outdoor'
+            ? active
+              ? 'rgba(197,168,105,0.22)'
+              : 'rgba(255,255,255,0.04)'
+            : active
+              ? 'rgba(197,168,105,0.28)'
+              : seen
+                ? 'rgba(255,255,255,0.13)'
+                : 'rgba(255,255,255,0.07)';
+        const select = () => onSelect(node.id);
+        return (
+          <g
+            key={node.id}
+            role="button"
+            tabIndex={0}
+            aria-label={`Walk to ${node.name}`}
+            className="cursor-pointer outline-none [&:focus-visible>rect]:stroke-[#c5a869] [&:hover>rect]:stroke-white"
+            onClick={select}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                select();
+              }
+            }}
+          >
+            <title>{node.name}</title>
+            <rect
+              x={node.rect.x}
+              y={node.rect.z}
+              width={node.rect.w}
+              height={node.rect.d}
+              fill={fill}
+              stroke={kind === 'outdoor' ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.75)'}
+              strokeWidth={kind === 'outdoor' ? stroke * 0.7 : stroke}
+              strokeDasharray={kind === 'outdoor' ? '0.4 0.3' : undefined}
+            />
+            {kind === 'stair' && (
+              <rect
+                x={node.rect.x}
+                y={node.rect.z}
+                width={node.rect.w}
+                height={node.rect.d}
+                fill={`url(#hatch-${variant})`}
+                pointerEvents="none"
               />
-            );
-          })}
-        </svg>
+            )}
+            {!mini && (
+              <text
+                x={node.rect.x + node.rect.w / 2}
+                y={node.rect.z + node.rect.d / 2}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fontSize={Math.min(0.62, node.rect.w / Math.max(6, node.name.length * 0.62))}
+                fill={active ? '#e3c887' : 'rgba(255,255,255,0.78)'}
+                style={{ letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600 }}
+                pointerEvents="none"
+              >
+                {node.name}
+              </text>
+            )}
+            {!mini && seen && hasPano(node) && (
+              <circle
+                cx={node.rect.x + node.rect.w - 0.45}
+                cy={node.rect.z + 0.45}
+                r={0.16}
+                fill="#c5a869"
+                pointerEvents="none"
+              />
+            )}
+          </g>
+        );
+      })}
 
-        {nodes.map((node, index) => {
-          const isActive = node.id === activeNodeId;
-          const isVisited = visited.includes(node.id);
-          const position = project(node.plan.x, node.plan.y, node.floor);
-          // The isometric view packs rooms close together, so rotate each label
-          // through below / above / right / left of its marker. Neighbouring
-          // rooms therefore never place their labels in the same spot.
-          const labelSlot = dollhouse ? index % 4 : 0;
+      {/* Stairs: tread lines and an arrow up the flight. */}
+      {tour.stairs
+        .filter((stair) => tour.nodes.find((n) => n.id === stair.from)?.floor === level || tour.nodes.find((n) => n.id === stair.to)?.floor === level)
+        .map((stair) => {
+          const vertical = stair.ascent === 'n' || stair.ascent === 's';
+          const length = vertical ? stair.run.d : stair.run.w;
+          const count = Math.round(length / 0.28);
           return (
-            <button
-              key={node.id}
-              type="button"
-              onClick={() => onSelect(node.id)}
-              className="group absolute -translate-x-1/2 -translate-y-1/2"
-              style={position}
-              title={node.name}
-            >
-              <span
-                className={[
-                  'block rounded-full border transition-all',
-                  mini ? 'h-2.5 w-2.5' : 'h-3.5 w-3.5',
-                  isActive
-                    ? 'scale-125 border-white bg-[#c5a869] shadow-[0_0_0_4px_rgba(197,168,105,0.25)]'
-                    : isVisited
-                      ? 'border-white/70 bg-white/70 group-hover:bg-white'
-                      : 'border-white/45 bg-white/15 group-hover:bg-white/60',
-                ].join(' ')}
-              />
-              {!mini && (
-                <span
-                  className={[
-                    'absolute whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.1em]',
-                    LABEL_SLOTS[labelSlot],
-                    isActive ? 'text-[#c5a869]' : 'text-white/55 group-hover:text-white',
-                  ].join(' ')}
-                >
-                  {node.name}
-                </span>
-              )}
-              <span className="sr-only">Walk to {node.name}</span>
-            </button>
+            <g key={`stair-${stair.from}`} pointerEvents="none">
+              {Array.from({ length: count + 1 }, (_, i) => {
+                const t = (i / count) * length;
+                return vertical ? (
+                  <line
+                    key={i}
+                    x1={stair.run.x}
+                    x2={stair.run.x + stair.run.w}
+                    y1={stair.run.z + t}
+                    y2={stair.run.z + t}
+                    stroke="rgba(255,255,255,0.45)"
+                    strokeWidth={stroke * 0.5}
+                  />
+                ) : (
+                  <line
+                    key={i}
+                    y1={stair.run.z}
+                    y2={stair.run.z + stair.run.d}
+                    x1={stair.run.x + t}
+                    x2={stair.run.x + t}
+                    stroke="rgba(255,255,255,0.45)"
+                    strokeWidth={stroke * 0.5}
+                  />
+                );
+              })}
+            </g>
           );
         })}
-      </div>
 
-      {!mini && (
-        <p className="mt-3 text-[11px] text-white/45">
-          Select any point to walk there. Dashed links are stairs between levels.
-        </p>
+      {/* Door openings: a break in the wall with a gold threshold. */}
+      {doors
+        .filter((door) => door.floor === level)
+        .map((door) => {
+          const half = door.width / 2;
+          const along = door.axis === 'z';
+          const x1 = along ? door.along - half : door.plane;
+          const x2 = along ? door.along + half : door.plane;
+          const y1 = along ? door.plane : door.along - half;
+          const y2 = along ? door.plane : door.along + half;
+          const outside = door.door.a === OUTSIDE || door.door.b === OUTSIDE;
+          return (
+            <g key={`door-${door.index}`} pointerEvents="none">
+              <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#16191c" strokeWidth={stroke * 2.2} />
+              <line
+                x1={x1}
+                y1={y1}
+                x2={x2}
+                y2={y2}
+                stroke={outside ? '#e3c887' : 'rgba(197,168,105,0.8)'}
+                strokeWidth={stroke * 0.8}
+              />
+            </g>
+          );
+        })}
+
+      {/* Visitor: a dot and a cone for where they are looking. */}
+      {pose && pose.floor === level && (
+        <g transform={`translate(${pose.x} ${pose.z}) rotate(${pose.yaw})`} pointerEvents="none">
+          <path
+            d={`M0 0 L${-Math.tan((35 * Math.PI) / 180) * 3} -3 A3 3 0 0 1 ${Math.tan((35 * Math.PI) / 180) * 3} -3 Z`}
+            fill="rgba(197,168,105,0.35)"
+          />
+          <circle r={mini ? 0.42 : 0.32} fill="#c5a869" stroke="#fff" strokeWidth={mini ? 0.12 : 0.08} />
+        </g>
       )}
-    </div>
-  );
-}
-
-function FloorChip({
-  active,
-  mini,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  mini: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={[
-        'rounded-full border transition-colors',
-        mini ? 'px-2 py-0.5 text-[9px]' : 'px-3 py-1 text-[11px]',
-        'font-semibold uppercase tracking-[0.1em]',
-        active
-          ? 'border-[#c5a869] bg-[#c5a869] text-ink-900'
-          : 'border-white/20 text-white/65 hover:border-white/50 hover:text-white',
-      ].join(' ')}
-    >
-      {children}
-    </button>
+    </svg>
   );
 }

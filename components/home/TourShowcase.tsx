@@ -5,6 +5,7 @@ import { useState } from 'react';
 import type { Property, PropertyTour } from '@/lib/types';
 import { locationLabel, priceLabel } from '@/lib/format';
 import { useSession } from '@/lib/store';
+import { captureNodes } from '@/lib/tour/layout';
 
 interface ShowcaseEntry {
   property: Property;
@@ -17,8 +18,8 @@ interface TourShowcaseProps {
 
 /**
  * Homepage feature for the walkover platform — the thing this site exists for.
- * Hovering a room preview swaps the stage image, so the section demonstrates the
- * room-to-room idea before a visitor ever opens a tour.
+ * Hovering a room preview swaps the stage image, so the section previews the
+ * rooms a visitor will walk through before they open a tour.
  */
 export function TourShowcase({ entries }: TourShowcaseProps) {
   const [activeTour, setActiveTour] = useState(0);
@@ -26,7 +27,8 @@ export function TourShowcase({ entries }: TourShowcaseProps) {
   const currency = useSession((state) => state.currency);
 
   const entry = entries[activeTour];
-  const node = entry.tour.nodes[Math.min(activeNode, entry.tour.nodes.length - 1)];
+  const rooms = captureNodes(entry.tour);
+  const node = rooms[Math.min(activeNode, rooms.length - 1)];
 
   return (
     <section
@@ -56,9 +58,9 @@ export function TourShowcase({ entries }: TourShowcaseProps) {
               Walk the whole house from anywhere
             </h2>
             <p className="mt-2 max-w-2xl text-[12.5px] leading-relaxed text-white/60">
-              Every showcase listing is captured as a connected set of 360° positions. Step from the
-              entry hall to the terrace, open the floor plan, measure a wall, or switch to Matterport
-              — in the browser, on any device, with no plugin.
+              Start at the street, walk up to the front door and on through the house one step at a
+              time — hall, doorway, room, stairs. Lift the roof off in the dollhouse, measure a wall,
+              or switch to Matterport — in the browser, on any device, with no plugin.
             </p>
           </div>
           <Link
@@ -130,7 +132,7 @@ export function TourShowcase({ entries }: TourShowcaseProps) {
             </div>
 
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-3">
-              {entry.tour.nodes.map((candidate, index) => (
+              {rooms.map((candidate, index) => (
                 <button
                   key={candidate.id}
                   type="button"
@@ -160,7 +162,7 @@ export function TourShowcase({ entries }: TourShowcaseProps) {
 
             <dl className="grid grid-cols-3 gap-2 border-t border-white/12 pt-4 text-center">
               {[
-                ['Capture points', String(entry.tour.nodes.length)],
+                ['Capture points', String(rooms.length)],
                 ['Levels', String(entry.tour.floors.length)],
                 [
                   'Scanned area',
