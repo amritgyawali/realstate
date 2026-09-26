@@ -11,7 +11,8 @@ import { seeded } from './textures';
  *
  * All of it is procedural — a sky shader with clouds and a mountain, mesa or
  * sea horizon, a few instanced tree species — so the exterior needs no assets
- * and reads as the listing's setting: a snowy valley, a coastline, a desert.
+ * and reads as the listing's setting: a snowy valley, a coastline, a desert,
+ * Himalayan foothills under a snow line, or tropical paddy country.
  */
 
 export interface EnvironmentBuild {
@@ -37,7 +38,10 @@ interface SettingLook {
   hemiGround: string;
   farRidge: string;
   nearRidge: string;
+  /** Snow caps on the far range. */
   snow: number;
+  /** Snow on the near ridges too (a winter valley), not just the high peaks. */
+  nearSnow: number;
   farBase: number;
   farAmp: number;
   nearBase: number;
@@ -56,6 +60,7 @@ const LOOKS: Record<TourSite['setting'], SettingLook> = {
     farRidge: '#8ea3b9',
     nearRidge: '#3c4c44',
     snow: 1,
+    nearSnow: 1,
     farBase: 0.015,
     farAmp: 0.21,
     nearBase: -0.03,
@@ -72,6 +77,7 @@ const LOOKS: Record<TourSite['setting'], SettingLook> = {
     farRidge: '#8fa39a',
     nearRidge: '#5d7054',
     snow: 0,
+    nearSnow: 0,
     farBase: -0.03,
     farAmp: 0.09,
     nearBase: -0.1,
@@ -88,12 +94,48 @@ const LOOKS: Record<TourSite['setting'], SettingLook> = {
     farRidge: '#c39b7a',
     nearRidge: '#a4684a',
     snow: 0,
+    nearSnow: 0,
     farBase: 0.0,
     farAmp: 0.2,
     nearBase: -0.02,
     nearAmp: 0.14,
     mesa: 1,
     clouds: 0.35,
+  },
+  // Terraced green foothills with a snow-capped range standing well above them.
+  himalayan: {
+    zenith: '#3d79bd',
+    horizon: '#dfe9f1',
+    sun: '#fff3de',
+    hemiSky: '#e6eff8',
+    hemiGround: '#7d8a6a',
+    farRidge: '#9aaabd',
+    nearRidge: '#48633f',
+    snow: 1,
+    nearSnow: 0,
+    farBase: 0.03,
+    farAmp: 0.34,
+    nearBase: -0.04,
+    nearAmp: 0.13,
+    mesa: 0,
+    clouds: 0.6,
+  },
+  tropical: {
+    zenith: '#3f86c4',
+    horizon: '#e2ecef',
+    sun: '#fff2da',
+    hemiSky: '#eaf3f5',
+    hemiGround: '#7f8a62',
+    farRidge: '#8ba396',
+    nearRidge: '#4f6a45',
+    snow: 0,
+    nearSnow: 0,
+    farBase: -0.02,
+    farAmp: 0.08,
+    nearBase: -0.06,
+    nearAmp: 0.07,
+    mesa: 0,
+    clouds: 0.65,
   },
 };
 
@@ -116,6 +158,7 @@ const SKY_FRAGMENT = /* glsl */ `
   uniform vec3 nearRidge;
   uniform vec3 groundFar;
   uniform float snow;
+  uniform float nearSnow;
   uniform float farBase;
   uniform float farAmp;
   uniform float nearBase;
@@ -190,7 +233,7 @@ const SKY_FRAGMENT = /* glsl */ `
       float depth = clamp((near - h) / max(0.02, near - nearBase), 0.0, 1.0);
       vec3 rock = nearRidge * (0.8 + 0.35 * noise(vec2(az * 60.0, h * 140.0)));
       if (mesa > 0.5) rock *= 0.9 + 0.1 * sin(h * 320.0);
-      if (snow > 0.5) {
+      if (nearSnow > 0.5) {
         float line = smoothstep(0.3, 0.16, depth) * (0.75 + 0.25 * noise(vec2(az * 90.0, 3.0)));
         rock = mix(rock, vec3(0.92, 0.94, 0.97), line);
       }
@@ -238,6 +281,7 @@ export function buildEnvironment(
         ),
       },
       snow: { value: look.snow },
+      nearSnow: { value: look.nearSnow },
       farBase: { value: look.farBase },
       farAmp: { value: look.farAmp },
       nearBase: { value: look.nearBase },
@@ -303,9 +347,10 @@ export function buildEnvironment(
   lights.add(hemi, sun, sun.target);
 
   // --------------------------------------------------------------- ground --
-  const groundGeometry = new THREE.CircleGeometry(site.setting === 'coastal' ? 95 : 700, 64);
+  const waterside = site.setting === 'coastal' || Boolean(site.waterside);
+  const groundGeometry = new THREE.CircleGeometry(waterside ? 95 : 700, 64);
   groundGeometry.rotateX(-Math.PI / 2);
-  scaleUV(groundGeometry, site.setting === 'coastal' ? 190 : 1400);
+  scaleUV(groundGeometry, waterside ? 190 : 1400);
   const ground = new THREE.Mesh(groundGeometry, palette.ground);
   ground.position.set(centre.x, grade - 0.01, centre.z);
   ground.receiveShadow = true;
@@ -314,7 +359,7 @@ export function buildEnvironment(
   group.add(ground);
   disposables.push(groundGeometry);
 
-  if (site.setting === 'coastal') {
+  if (waterside) {
     const beach = new THREE.RingGeometry(94, 118, 64);
     beach.rotateX(-Math.PI / 2);
     const sand = palette.concrete.clone();
@@ -377,6 +422,7 @@ export function buildEnvironment(
 
 function plant(tour: PropertyTour, palette: Palette, centre: THREE.Vector3) {
   const site = tour.site;
+  const waterside = site.setting === 'coastal' || Boolean(site.waterside);
   const random = seeded(tour.title.length * 131 + 7);
   const grade = -site.plinth;
   const bounds = floorBounds(tour);
@@ -412,7 +458,14 @@ function plant(tour: PropertyTour, palette: Palette, centre: THREE.Vector3) {
   const species =
     site.setting === 'alpine'
       ? [{ geometry: pine(), count: 90, scale: [0.8, 1.5] as [number, number] }]
-      : site.setting === 'coastal'
+      : site.setting === 'himalayan'
+        ? [
+            { geometry: pine(), count: 46, scale: [0.8, 1.4] as [number, number] },
+            { geometry: roundTree('#56753f'), count: 30, scale: [0.7, 1.2] as [number, number] },
+            { geometry: shrub('#62834a'), count: 40, scale: [0.5, 1.1] as [number, number] },
+            { geometry: rock(), count: 14, scale: [0.4, 1.2] as [number, number] },
+          ]
+        : site.setting === 'coastal' || site.setting === 'tropical'
         ? [
             { geometry: palm(), count: 28, scale: [0.85, 1.25] as [number, number] },
             { geometry: roundTree('#5f7f45'), count: 26, scale: [0.7, 1.1] as [number, number] },
@@ -436,7 +489,7 @@ function plant(tour: PropertyTour, palette: Palette, centre: THREE.Vector3) {
     while (placed < count && attempts < count * 40) {
       attempts += 1;
       const angle = random() * Math.PI * 2;
-      const ring = radius + 5 + Math.pow(random(), 0.7) * (site.setting === 'coastal' ? 55 : 70);
+      const ring = radius + 5 + Math.pow(random(), 0.7) * (waterside ? 55 : 70);
       const x = centre.x + Math.cos(angle) * ring;
       const z = centre.z + Math.sin(angle) * ring;
       if (!keepClear(x, z, 2.5)) continue;

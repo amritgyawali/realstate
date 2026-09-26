@@ -215,9 +215,9 @@ export function buildHouse(
 
   const setting = tour.site.setting;
   const windowStyle =
-    setting === 'alpine'
+    setting === 'alpine' || setting === 'himalayan'
       ? { width: 1.5, sill: 0.75, head: 2.55, gap: 0.9 }
-      : setting === 'coastal'
+      : setting === 'coastal' || setting === 'tropical'
         ? { width: 2.3, sill: 0.15, head: 2.65, gap: 0.9 }
         : { width: 1.4, sill: 0.55, head: 2.6, gap: 1.1 };
 

@@ -355,6 +355,30 @@ export default async function PropertyPage({
         <section className="mb-10 text-[10px] leading-relaxed text-ink-300">
           <h2 className="mb-1.5 text-[11px] font-semibold text-gray-600">Disclaimers</h2>
           <p className="mb-1">Last updated: {formatDate(property.listedOn)}</p>
+          <p className="mb-1">
+            Sample listing: the price, agent, floor areas and room plan are illustrative.
+          </p>
+          <p className="mb-1" data-purpose="photo-credits">
+            Photographs:{' '}
+            {property.credits?.map((credit) => (
+              <span key={credit.image}>
+                exterior by{' '}
+                <a href={credit.source} className="underline hover:text-gray-600" rel="noopener">
+                  {credit.author}
+                </a>
+                , licensed{' '}
+                <a href={credit.licenseUrl} className="underline hover:text-gray-600" rel="license noopener">
+                  {credit.license}
+                </a>{' '}
+                via Wikimedia Commons;{' '}
+              </span>
+            ))}
+            room views and the 3D walkover from CC0 panoramas by{' '}
+            <a href="https://polyhaven.com" className="underline hover:text-gray-600" rel="noopener">
+              Poly Haven
+            </a>
+            .
+          </p>
           <p className="italic">
             To the fullest extent permissible pursuant to applicable law, this web site and the
             materials are provided on an &ldquo;as is&rdquo; and &ldquo;as available&rdquo; basis.

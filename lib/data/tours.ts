@@ -1,4 +1,4 @@
-import type { PropertyTour } from '@/lib/types';
+import type { PropertyTour, TourSite } from '@/lib/types';
 
 /**
  * Tour buildings.
@@ -15,8 +15,13 @@ import type { PropertyTour } from '@/lib/types';
  * built from those distances around `capture` reproduces the photo exactly at
  * the capture point and holds together as you walk away from it. `heading`
  * turns each photo so its own doorways fall on the plan's doors — the hall's
- * double doors really do open into the great room, and the bedroom's two doors
- * really do lead to the landing and the en-suite.
+ * double doors really do open into the great room, the lodge's billiard-room
+ * opening really does look back into the bar, and the squash court's door sits
+ * in its back wall.
+ *
+ * There are four models — the ten-capture lakeside villa, a timber hill house,
+ * a garden villa and a haveli — and each listing takes one of them, retitled
+ * and set in its own landscape (`variant` below).
  *
  * Conventions: x east, z south (down the plan), metres. Headings and view yaws
  * are compass degrees (0 = north, 90 = east). Hotspot yaw/pitch are in the
@@ -28,16 +33,279 @@ import type { PropertyTour } from '@/lib/types';
 
 /**
  * Optional Matterport space. Set NEXT_PUBLIC_MATTERPORT_MODEL_ID to a model you
- * control and the flagship listing gains a Matterport tab alongside the built-in
+ * control and the timber hill houses gain a Matterport tab alongside the built-in
  * engine; leave it unset and the built-in engine is the only provider offered.
  */
 export const MATTERPORT_MODEL_ID = process.env.NEXT_PUBLIC_MATTERPORT_MODEL_ID ?? '';
 
-const telluride: PropertyTour = {
+/**
+ * Phewa Lakeside Villa — ten 360° captures of one lakeside estate, walked as a
+ * single-level house. The lounge is the entrance; the dining hall opens north
+ * onto the lake veranda, and the veranda steps down to the jetty and along the
+ * shore. East of the lounge run the billiard room, the games room, the fireside
+ * pavilion and a garden door up to the ridge lookout; west of the dining hall is
+ * the squash court. All ten photographs were taken on the same property.
+ *
+ * Distances in each photo were read off its floor/wall line, so the rooms keep
+ * their real proportions: the lounge is 9.5 x 12.6 m, the dining hall 17 x 11 m.
+ */
+const lakesideVilla: PropertyTour = {
+  provider: 'panorama',
+  title: 'Phewa Lakeside Villa',
+  capturedBy: 'Phewa Lakeside Estates',
+  scanDate: '2026-09-18',
+  startNode: 'lounge',
+  floors: [{ level: 1, name: 'Lake Level', area: 9350 }],
+  site: {
+    setting: 'himalayan',
+    waterside: true,
+    facade: 'stone',
+    storey: 3.8,
+    plinth: 0.45,
+    approach: [
+      { x: -2, z: 22, label: 'Lakeside road' },
+      { x: -1, z: 15.5, label: 'Drive' },
+      { x: 0.6, z: 10, label: 'Front garden' },
+      { x: 0.6, z: 6.8, label: 'Front steps' },
+    ],
+  },
+  nodes: [
+    {
+      id: 'lounge',
+      name: 'Entrance Lounge & Bar',
+      pano: 'warm_bar',
+      floor: 1,
+      rect: { x: -6, z: -9, w: 9.5, d: 12.6 },
+      height: 3.4,
+      capture: { x: 0, z: 0 },
+      heading: 0,
+      view: 0,
+      hotspots: [
+        {
+          yaw: -20,
+          pitch: -10,
+          label: 'Stone-clad bar',
+          body: 'A curved bar in dressed river stone with a timber top, cold room behind and seating for twelve.',
+        },
+        {
+          yaw: 100,
+          pitch: -8,
+          label: 'Cast-iron fireplace',
+          body: 'Free-standing firebox under a flue through the vaulted ceiling — the room\'s heat on winter evenings.',
+        },
+      ],
+    },
+    {
+      id: 'dining',
+      name: 'Dining Hall',
+      pano: 'warm_restaurant',
+      floor: 1,
+      rect: { x: -23, z: -8, w: 17, d: 11 },
+      height: 3.8,
+      capture: { x: -15, z: -3 },
+      heading: 90,
+      view: 0,
+      hotspots: [
+        {
+          yaw: -60,
+          pitch: 0,
+          label: 'Lake-facing French doors',
+          body: 'Two pairs of French doors open straight onto the covered veranda and the water beyond.',
+        },
+        {
+          yaw: 105,
+          pitch: -5,
+          label: 'Stone chimney breast',
+          body: 'An open hearth in local sandstone anchors the east end of the hall under exposed pine trusses.',
+        },
+      ],
+    },
+    {
+      id: 'veranda',
+      name: 'Lake Veranda',
+      kind: 'outdoor',
+      pano: 'qwantani_patio',
+      floor: 1,
+      rect: { x: -16, z: -15, w: 10, d: 7 },
+      capture: { x: -10.1, z: -10 },
+      heading: 180,
+      view: -45,
+      hotspots: [
+        {
+          yaw: 130,
+          pitch: 0,
+          label: 'Lake frontage',
+          body: 'The lawn runs down from the veranda to the shore, with the jetty a short walk to the north.',
+        },
+        {
+          yaw: -60,
+          pitch: -5,
+          label: 'Wood-fired grill',
+          body: 'A brick barbecue and chimney stand at the edge of the tiled terrace, under the shade of the olive trees.',
+        },
+      ],
+    },
+    {
+      id: 'jetty',
+      name: 'Private Jetty',
+      kind: 'outdoor',
+      pano: 'small_harbour_morning',
+      floor: 1,
+      rect: { x: -14, z: -25, w: 8, d: 10 },
+      capture: { x: -10, z: -19 },
+      heading: 60,
+      view: 0,
+      hotspots: [
+        {
+          yaw: -60,
+          pitch: -2,
+          label: 'Stone breakwater',
+          body: 'A gabion breakwater shelters the mooring; boats and paddle craft launch from the slipway beside it.',
+        },
+      ],
+    },
+    {
+      id: 'shore',
+      name: 'Lakeshore Point',
+      kind: 'outdoor',
+      pano: 'lakeside',
+      floor: 1,
+      rect: { x: -24, z: -25, w: 10, d: 10 },
+      capture: { x: -19, z: -20 },
+      heading: -50,
+      view: -30,
+      hotspots: [
+        {
+          yaw: 20,
+          pitch: -8,
+          label: 'Swimming cove',
+          body: 'Shelving rock and clear, shallow water on the sheltered side of the point.',
+        },
+      ],
+    },
+    {
+      id: 'billiard',
+      name: 'Billiard Room',
+      pano: 'billiard_hall',
+      floor: 1,
+      rect: { x: 3.5, z: -12.3, w: 9.7, d: 9.9 },
+      height: 3.4,
+      capture: { x: 7.5, z: -6.3 },
+      heading: 270,
+      view: 180,
+      hotspots: [
+        {
+          yaw: -80,
+          pitch: -15,
+          label: 'Two full-size tables',
+          body: 'Slate-bed tables under brass pendant lights, with a cue rack and a garden door to the lawn.',
+        },
+      ],
+    },
+    {
+      id: 'games',
+      name: 'Games Room',
+      pano: 'empty_play_room',
+      floor: 1,
+      rect: { x: 13.2, z: -13.5, w: 12.5, d: 15 },
+      height: 3.8,
+      capture: { x: 20.7, z: -6.5 },
+      heading: 180,
+      view: 90,
+      hotspots: [
+        {
+          yaw: -45,
+          pitch: -2,
+          label: 'Garden doors',
+          body: 'Glazed doors open east onto the garden and the path up to the ridge lookout.',
+        },
+        {
+          yaw: 170,
+          pitch: -12,
+          label: 'Table tennis',
+          body: 'Room for table tennis, a children\'s play corner and a long family table under the clerestory.',
+        },
+      ],
+    },
+    {
+      id: 'pavilion',
+      name: 'Fireside Pavilion',
+      pano: 'boma',
+      floor: 1,
+      rect: { x: 9.5, z: 1.5, w: 13.5, d: 16 },
+      height: 4.2,
+      capture: { x: 16, z: 9.5 },
+      heading: 0,
+      view: 180,
+      hotspots: [
+        {
+          yaw: 165,
+          pitch: -5,
+          label: 'Wood-fired oven',
+          body: 'A brick oven and fireplace stand in the middle of the arcaded pavilion — built for festival cooking.',
+        },
+      ],
+    },
+    {
+      id: 'ridge',
+      name: 'Ridge Lookout',
+      kind: 'outdoor',
+      pano: 'qwantani_afternoon',
+      floor: 1,
+      rect: { x: 25.7, z: -8, w: 10, d: 12 },
+      capture: { x: 30.7, z: -2 },
+      heading: 75,
+      view: 0,
+      hotspots: [
+        {
+          yaw: -75,
+          pitch: -2,
+          label: 'Lake panorama',
+          body: 'The whole lake opens up below the lookout, with the far shore and the hills beyond.',
+        },
+      ],
+    },
+    {
+      id: 'squash',
+      name: 'Squash Court',
+      pano: 'squash_court',
+      floor: 1,
+      rect: { x: -32.75, z: -5.45, w: 9.75, d: 6.4 },
+      height: 6,
+      capture: { x: -27.25, z: -2.25 },
+      heading: 10,
+      view: 270,
+      hotspots: [
+        {
+          yaw: 70,
+          pitch: 20,
+          label: 'Viewing gallery',
+          body: 'A championship-size 9.75 x 6.4 m court with a sprung timber floor and a spectator gallery above the back wall.',
+        },
+      ],
+    },
+  ],
+  doors: [
+    { a: 'lounge', b: 'outside', x: 0.6, z: 3.6, width: 1.8, style: 'entrance' },
+    { a: 'lounge', b: 'dining', x: -6, z: -1, width: 1.8, style: 'arch' },
+    { a: 'lounge', b: 'billiard', x: 3.5, z: -4, width: 1.2 },
+    { a: 'dining', b: 'veranda', x: -12.1, z: -8, width: 1.8, style: 'glass' },
+    { a: 'dining', b: 'squash', x: -23, z: -3 },
+    { a: 'veranda', b: 'jetty', x: -10, z: -15, width: 3, style: 'open' },
+    { a: 'jetty', b: 'shore', x: -14, z: -20, width: 3, style: 'open' },
+    { a: 'billiard', b: 'games', x: 13.2, z: -7.8 },
+    { a: 'games', b: 'pavilion', x: 14.5, z: 1.5, width: 1.8, style: 'arch' },
+    { a: 'games', b: 'ridge', x: 25.7, z: -1.5, width: 2, style: 'glass' },
+  ],
+  stairs: [],
+};
+
+/** Two-storey timber hill house: hall, great room, hearth, kitchen, deck and a suite upstairs. */
+const timberHouse: PropertyTour = {
   provider: 'panorama',
   modelId: MATTERPORT_MODEL_ID,
-  title: '542 Telluride Lodge',
-  capturedBy: "LIV Sotheby's International Realty",
+  title: 'Timber Hill House',
+  capturedBy: 'Himalayan Hills Realty',
   scanDate: '2026-08-29',
   startNode: 'entry',
   floors: [
@@ -45,7 +313,7 @@ const telluride: PropertyTour = {
     { level: 2, name: 'Upper Level', area: 390 },
   ],
   site: {
-    setting: 'alpine',
+    setting: 'himalayan',
     facade: 'timber',
     storey: 3.3,
     plinth: 0.6,
@@ -71,8 +339,8 @@ const telluride: PropertyTour = {
         {
           yaw: -68,
           pitch: -4,
-          label: 'Heated ski locker',
-          body: 'Boot dryers, a snowmelt entry slab and a dedicated gear wall sit immediately off the arrival vestibule.',
+          label: 'Boot room',
+          body: 'Boot racks, a drying cupboard and a slate floor just inside the door — built for monsoon mud and trekking kit.',
         },
       ],
     },
@@ -91,7 +359,7 @@ const telluride: PropertyTour = {
           yaw: -40,
           pitch: 4,
           label: 'Floor-to-ceiling glazing',
-          body: 'Triple-glazed, argon-filled window wall framing the box canyon and the ski area beyond.',
+          body: 'Double-glazed window wall framing the ridge line and the snow peaks beyond it.',
         },
       ],
     },
@@ -109,8 +377,8 @@ const telluride: PropertyTour = {
         {
           yaw: -84,
           pitch: -8,
-          label: 'Board-formed concrete hearth',
-          body: 'Cast on site with reclaimed fir formwork, paired with a sealed-combustion firebox.',
+          label: 'Stone hearth',
+          body: 'Dry-laid local stone around a sealed wood stove — the house\'s heat through the winter months.',
         },
       ],
     },
@@ -147,14 +415,14 @@ const telluride: PropertyTour = {
         {
           yaw: -40,
           pitch: 2,
-          label: 'Hot tub terrace',
-          body: 'South-facing deck with a recessed spa and a gas fire table, plumbed for an outdoor kitchen.',
+          label: 'Sun deck',
+          body: 'South-facing timber deck with a gas fire table, plumbed for an outdoor kitchen.',
         },
       ],
     },
     {
       id: 'overlook',
-      name: 'Box Canyon Overlook',
+      name: 'Waterfall Overlook',
       kind: 'outdoor',
       pano: 'sterkspruit_falls',
       floor: 1,
@@ -166,8 +434,8 @@ const telluride: PropertyTour = {
         {
           yaw: 20,
           pitch: 4,
-          label: 'Coonskin Lift',
-          body: 'The lift and River Trail are directly across the street — ski access without a shuttle.',
+          label: 'Waterfall trail',
+          body: 'A footpath drops from the overlook to the stream and the falls below the house.',
         },
       ],
     },
@@ -199,8 +467,8 @@ const telluride: PropertyTour = {
         {
           yaw: -60,
           pitch: 2,
-          label: 'Ski area aspect',
-          body: 'The bed wall faces due south; the glazing opposite frames the upper mountain runs.',
+          label: 'Mountain aspect',
+          body: 'The bed wall faces due south; the glazing opposite frames the high peaks at first light.',
         },
       ],
     },
@@ -219,7 +487,7 @@ const telluride: PropertyTour = {
           yaw: 30,
           pitch: -18,
           label: 'Radiant stone floor',
-          body: 'Honed limestone over hydronic radiant, with a steam shower and a freestanding soaking tub.',
+          body: 'Honed stone over underfloor heating, with a steam shower and a freestanding soaking tub.',
         },
       ],
     },
@@ -240,10 +508,11 @@ const telluride: PropertyTour = {
   ],
 };
 
-const coastal: PropertyTour = {
+/** Garden villa: a double-height living pavilion, pool wing, terraces and a suite upstairs. */
+const gardenVilla: PropertyTour = {
   provider: 'panorama',
-  title: 'Cala Vinyas Waterfront Villa',
-  capturedBy: 'Eklund Stockholm New York',
+  title: 'Garden Villa',
+  capturedBy: 'Konkan Coast Properties',
   scanDate: '2026-09-02',
   startNode: 'living',
   floors: [
@@ -308,7 +577,7 @@ const coastal: PropertyTour = {
           yaw: -78,
           pitch: -6,
           label: 'Outdoor kitchen',
-          body: 'Covered pergola terrace with a built-in brick grill, looking out over the lawn to the water.',
+          body: 'Covered pergola terrace with a built-in brick grill, looking out over the lawn and the garden.',
         },
       ],
     },
@@ -326,8 +595,8 @@ const coastal: PropertyTour = {
         {
           yaw: -30,
           pitch: -12,
-          label: 'Year-round lap pool',
-          body: 'Dehumidified enclosure, 18 m lap lane, counter-current system and an adjoining sauna.',
+          label: 'Year-round pool',
+          body: 'Dehumidified enclosure, 18 m pool, counter-current system and an adjoining sauna.',
         },
       ],
     },
@@ -377,7 +646,7 @@ const coastal: PropertyTour = {
     },
     {
       id: 'suite',
-      name: 'Seaview Suite',
+      name: 'Principal Suite',
       pano: 'relax_inn_seaview_suite',
       floor: 2,
       rect: { x: -5.6, z: -1.9, w: 5.9, d: 6.3 },
@@ -388,7 +657,7 @@ const coastal: PropertyTour = {
     },
     {
       id: 'balcony',
-      name: 'Ocean Balcony',
+      name: 'Suite Balcony',
       kind: 'outdoor',
       pano: 'illovo_beach_balcony',
       floor: 2,
@@ -414,10 +683,11 @@ const coastal: PropertyTour = {
   ],
 };
 
-const penthouse: PropertyTour = {
+/** Haveli residence: library, baithak, durbar hall and guest suite, with a roof terrace above. */
+const haveli: PropertyTour = {
   provider: 'panorama',
-  title: 'Skyline Penthouse Residence',
-  capturedBy: 'Harvey Kalles Real Estate LTD',
+  title: 'Haveli Residence',
+  capturedBy: 'Rajputana Heritage Homes',
   scanDate: '2026-09-06',
   startNode: 'library',
   floors: [
@@ -431,7 +701,7 @@ const penthouse: PropertyTour = {
     plinth: 0.3,
     approach: [
       { x: -3, z: 20, label: 'Street' },
-      { x: -1.5, z: 14, label: 'Motor court' },
+      { x: -1.5, z: 14, label: 'Forecourt' },
       { x: 0, z: 8.5, label: 'Entry court' },
       { x: 0, z: 5.4, label: 'Front steps' },
     ],
@@ -451,14 +721,14 @@ const penthouse: PropertyTour = {
         {
           yaw: 152,
           pitch: -12,
-          label: 'Millwork study',
-          body: 'Full-height rift oak shelving with integrated lighting and a concealed service bar.',
+          label: 'Library',
+          body: 'Full-height teak shelving, arched French windows and a terrazzo floor laid in the original pattern.',
         },
       ],
     },
     {
       id: 'lounge',
-      name: 'Sky Lounge',
+      name: 'Baithak Lounge',
       pano: 'cayley_interior',
       floor: 1,
       rect: { x: 2.4, z: -7.2, w: 8.4, d: 6.8 },
@@ -480,7 +750,7 @@ const penthouse: PropertyTour = {
     },
     {
       id: 'club',
-      name: 'Club Room',
+      name: 'Durbar Hall',
       pano: 'country_club',
       floor: 1,
       rect: { x: -9.8, z: -16.9, w: 15.0, d: 9.7 },
@@ -492,8 +762,8 @@ const penthouse: PropertyTour = {
         {
           yaw: 40,
           pitch: -2,
-          label: 'Resident amenity',
-          body: 'Private club level with a chef kitchen, screening room and a 14-seat dining table.',
+          label: 'Painted hall',
+          body: 'Double-height reception hall with hand-painted walls and seating for a full family gathering.',
         },
       ],
     },
@@ -513,7 +783,7 @@ const penthouse: PropertyTour = {
     },
     {
       id: 'skyline',
-      name: 'Skyline Balcony',
+      name: 'Upper Terrace',
       kind: 'outdoor',
       pano: 'hotel_rooftop_balcony',
       floor: 2,
@@ -548,17 +818,103 @@ const penthouse: PropertyTour = {
   ],
 };
 
+interface Variant {
+  title: string;
+  capturedBy: string;
+  scanDate: string;
+  setting?: TourSite['setting'];
+  facade?: TourSite['facade'];
+  waterside?: boolean;
+}
+
 /**
- * Tours keyed by property slug. Listings without an entry here fall back to the
- * shared demo walkthrough so every `hasTour` card still opens something real.
+ * One of the four models, retitled for a listing and set in that listing's
+ * landscape. The rooms and photographs stay the same; the ground, sky and
+ * facade around them change.
  */
+function variant(model: PropertyTour, v: Variant): PropertyTour {
+  return {
+    ...model,
+    title: v.title,
+    capturedBy: v.capturedBy,
+    scanDate: v.scanDate,
+    site: {
+      ...model.site,
+      setting: v.setting ?? model.site.setting,
+      facade: v.facade ?? model.site.facade,
+      waterside: v.waterside ?? model.site.waterside,
+    },
+  };
+}
+
+/** Tours keyed by property slug. Every listing with `hasTour` has an entry. */
 export const toursBySlug: Record<string, PropertyTour> = {
-  '747-w-pacific-avenue-unit-540-telluride': telluride,
-  'cala-vinyes-spain': coastal,
-  '11966-rockview-point-street-las-vegas': penthouse,
+  'phewa-lakeside-villa-pokhara': lakesideVilla,
+  'nagarkot-ridge-house-bhaktapur': variant(timberHouse, {
+    title: 'Nagarkot Ridge House',
+    capturedBy: 'Himalayan Hills Realty',
+    scanDate: '2026-09-02',
+  }),
+  'thapathana-stone-house-parbat': variant(timberHouse, {
+    title: 'Thapathana Stone House',
+    capturedBy: 'Phewa Lakeside Estates',
+    scanDate: '2026-08-27',
+    facade: 'stone',
+  }),
+  'birendranagar-garden-house-surkhet': variant(timberHouse, {
+    title: 'Birendranagar Garden House',
+    capturedBy: 'Karnali Homes',
+    scanDate: '2026-09-09',
+    facade: 'stucco',
+  }),
+  'muktinath-mountain-house-mustang': variant(timberHouse, {
+    title: 'Muktinath Mountain House',
+    capturedBy: 'Phewa Lakeside Estates',
+    scanDate: '2026-08-21',
+    facade: 'stone',
+  }),
+  'budhanilkantha-garden-villa-kathmandu': variant(gardenVilla, {
+    title: 'Budhanilkantha Garden Villa',
+    capturedBy: 'Himalayan Hills Realty',
+    scanDate: '2026-09-14',
+    setting: 'himalayan',
+  }),
+  'nerul-riverside-villa-goa': variant(gardenVilla, {
+    title: 'Nerul Riverside Villa',
+    capturedBy: 'Konkan Coast Properties',
+    scanDate: '2026-09-05',
+  }),
+  'portuguese-village-home-goa': variant(gardenVilla, {
+    title: 'Portuguese-Era Village Home',
+    capturedBy: 'Konkan Coast Properties',
+    scanDate: '2026-08-30',
+    setting: 'tropical',
+  }),
+  'hamirpur-hill-house-himachal': variant(timberHouse, {
+    title: 'Hamirpur Hill House',
+    capturedBy: 'Dhauladhar Estates',
+    scanDate: '2026-09-11',
+    facade: 'stucco',
+  }),
+  'kareri-village-house-kangra': variant(timberHouse, {
+    title: 'Kareri Village House',
+    capturedBy: 'Dhauladhar Estates',
+    scanDate: '2026-08-24',
+  }),
+  'shekhawati-haveli-jhunjhunu': variant(haveli, {
+    title: 'Shekhawati Painted Haveli',
+    capturedBy: 'Rajputana Heritage Homes',
+    scanDate: '2026-09-07',
+  }),
+  'thalavadi-farmhouse-erode': variant(gardenVilla, {
+    title: 'Thalavadi Farmhouse',
+    capturedBy: 'Nilgiri Country Homes',
+    scanDate: '2026-09-16',
+    setting: 'tropical',
+  }),
 };
 
-export const fallbackTours = [telluride, coastal, penthouse];
+export const fallbackTours = [lakesideVilla, timberHouse, gardenVilla, haveli];
 
 export function getTour(slug: string, index = 0): PropertyTour {
   return toursBySlug[slug] ?? fallbackTours[index % fallbackTours.length];

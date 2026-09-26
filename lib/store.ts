@@ -3,6 +3,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { Currency } from '@/lib/types';
+import { isCurrency } from '@/lib/format';
 
 interface SavedSearch {
   id: string;
@@ -12,7 +13,8 @@ interface SavedSearch {
 }
 
 interface SessionState {
-  currency: Currency;
+  /** Display currency; `null` shows each listing in its own currency. */
+  currency: Currency | null;
   favorites: string[];
   compare: string[];
   recentlyViewed: string[];
@@ -21,7 +23,7 @@ interface SessionState {
   visitedNodes: string[];
   reducedMotion: boolean;
 
-  setCurrency: (currency: Currency) => void;
+  setCurrency: (currency: Currency | null) => void;
   toggleFavorite: (slug: string) => void;
   toggleCompare: (slug: string) => void;
   clearCompare: () => void;
@@ -37,7 +39,7 @@ const MAX_RECENT = 12;
 export const useSession = create<SessionState>()(
   persist(
     (set) => ({
-      currency: 'USD',
+      currency: null,
       favorites: [],
       compare: [],
       recentlyViewed: [],
@@ -96,7 +98,13 @@ export const useSession = create<SessionState>()(
     {
       name: 'lre-session',
       storage: createJSONStorage(() => localStorage),
-      version: 1,
+      version: 2,
+      // Version 1 defaulted to USD and offered currencies that no longer exist.
+      migrate: (persisted, version) => {
+        const state = (persisted ?? {}) as Partial<SessionState>;
+        if (version < 2 || !isCurrency(state.currency)) state.currency = null;
+        return state as SessionState;
+      },
     },
   ),
 );

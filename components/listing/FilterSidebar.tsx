@@ -4,50 +4,23 @@ import { useId, useState } from 'react';
 import type { SearchQuery } from '@/lib/smart-search';
 
 export const CHARACTERISTICS = [
-  'Auction',
-  'Bed and Breakfast',
-  'Beachfront',
-  'CoOp',
-  'Corporate Retreat',
-  'Country Club Comm',
   'Country Home',
   'Desert',
-  'Equestrian',
-  'Fly Fishing',
-  'Golf Course',
   'Historic',
   'In-City',
-  'Island',
   'Lake',
   'Mountain View',
-  'New Construction',
-  'Ocean',
-  'Private Islands',
-  'Private Res. Club',
   'River View',
-  'Ski Property',
-  'Skyline View',
   'Suburban Home',
   'Tropical',
   'Waterfront',
-  'Water View',
-  'Wine Country',
 ];
 
 const PRICE_STEPS = [250_000, 500_000, 1_000_000, 2_000_000, 5_000_000, 10_000_000, 25_000_000];
 const COUNT_STEPS = [1, 2, 3, 4, 5, 6, 7, 8];
 const ACRE_STEPS = [0.25, 0.5, 1, 2, 5, 10, 25, 100];
 
-const PROPERTY_TYPES = [
-  'Single Family',
-  'Townhouse',
-  'Condominium',
-  'Estate',
-  'Villa',
-  'Penthouse',
-  'Farm & Ranch',
-  'Lots & Land',
-];
+const PROPERTY_TYPES = ['Single Family', 'Villa', 'Haveli', 'Farmhouse'];
 
 const LISTING_STATUSES = ['Active', 'Pending', 'Auction', 'New'];
 
