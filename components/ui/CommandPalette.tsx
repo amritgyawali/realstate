@@ -27,10 +27,10 @@ const SHORTCUTS: Shortcut[] = [
 ];
 
 const EXAMPLES = [
-  '5 bed ski property in Colorado under $3m with a 3d tour',
-  'waterfront villa in Spain over €5m',
-  'penthouse with skyline view and video',
-  'regents showcase ranch 10 acres',
+  'lakeside villa in Pokhara with a 3d tour',
+  '4 bed house in Nepal with mountain view',
+  'heritage haveli in Rajasthan',
+  'riverside villa in Goa under $2m',
 ];
 
 /**

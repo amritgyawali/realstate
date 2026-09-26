@@ -6,30 +6,6 @@ import type { Agent } from '@/lib/types';
 import { properties } from '@/lib/data/properties';
 import { AgentPortrait } from '@/components/professionals/AgentPortrait';
 
-const LANGUAGES = [
-  'Arabic',
-  'Armenian',
-  'Chinese',
-  'Czech',
-  'Dutch',
-  'English',
-  'French',
-  'German',
-  'Greek (Modern)',
-  'Gujarati',
-  'Hebrew (modern)',
-  'Hindi',
-  'Hungarian',
-  'Italian',
-  'Japanese',
-  'Kinyarwanda',
-  'Korean',
-  'Latvian',
-  'Mandarin',
-  'Portuguese',
-  'Spanish',
-];
-
 const PER_PAGE = 24;
 
 /** Professionals directory: filter rail, portrait grid, pagination. */
@@ -49,6 +25,12 @@ export function ProfessionalsBrowser({ agents }: { agents: Agent[] }) {
     });
     return counts;
   }, []);
+
+  // Offer the languages the members actually speak, so no box filters to nothing.
+  const languageOptions = useMemo(
+    () => Array.from(new Set(agents.flatMap((agent) => agent.languages))).sort(),
+    [agents],
+  );
 
   const countries = useMemo(
     () =>
@@ -199,7 +181,7 @@ export function ProfessionalsBrowser({ agents }: { agents: Agent[] }) {
             Languages
           </h3>
           <div className="grid grid-cols-1 gap-y-1.5 text-[11px] text-gray-600">
-            {LANGUAGES.map((language) => (
+            {languageOptions.map((language) => (
               <label key={language} className="flex cursor-pointer items-center gap-1.5">
                 <input
                   type="checkbox"

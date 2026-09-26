@@ -12,9 +12,9 @@ type PhotoProps = Omit<ImageProps, 'src' | 'alt'> & {
 /**
  * `next/image` that fails to paper rather than to a broken frame.
  *
- * Every photograph on the site is hosted off-domain, so a single expired or
- * rate-limited URL is enough to drop a torn-image glyph into the middle of a
- * card grid. When one does not load the frame falls back to the crest on sand,
+ * Some photographs are served from our own /public and some from off-domain
+ * hosts, and a single expired or rate-limited URL is enough to drop a torn-image
+ * glyph into the middle of a card grid. When one does not load the frame falls back to the crest on sand,
  * which reads as an intentional "no photograph" state — the same treatment
  * `AgentPortrait` already gives a member with no headshot.
  *

@@ -29,11 +29,11 @@ const cinzel = Cinzel({
 export const metadata: Metadata = {
   metadataBase: new URL('https://www.luxuryrealestate.com'),
   title: {
-    default: "Who's Who in Luxury Real Estate | Global Luxury Homes & 360° Tours",
+    default: "Who's Who in Luxury Real Estate | Houses & Villas in Nepal and India, in 3D/360°",
     template: '%s | Who’s Who in Luxury Real Estate',
   },
   description:
-    'Search the world’s finest homes and walk through them in 3D/360°. Immersive virtual walkover tours, curated destinations and a vetted global network of luxury brokerages.',
+    'Houses, villas and heritage homes in Nepal and India, every one walkable in 3D/360° — from the lakeshore at Pokhara to the havelis of Shekhawati.',
   keywords: [
     'luxury real estate',
     '3D tours',
@@ -41,14 +41,17 @@ export const metadata: Metadata = {
     'virtual walkthrough',
     'Matterport',
     'luxury homes for sale',
-    'international property',
+    'Nepal real estate',
+    'India real estate',
+    'house for sale Kathmandu',
+    'villa for sale Goa',
   ],
   openGraph: {
     type: 'website',
     siteName: "Who's Who in Luxury Real Estate",
     title: "Who's Who in Luxury Real Estate",
     description:
-      'Walk through the world’s finest homes in 3D/360° — anywhere, on any device.',
+      'Walk through houses and villas in Nepal and India in 3D/360° — anywhere, on any device.',
   },
   robots: { index: true, follow: true },
 };

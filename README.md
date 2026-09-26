@@ -1,8 +1,15 @@
 # Who's Who in Luxury Real Estate — Virtual Walkover Platform
 
 A Next.js implementation of the LuxuryRealEstate.com design system, built around a
-360° virtual walkover engine: every showcase listing can be walked room by room in
-the browser, on any device, with no plugin and no third-party account.
+360° virtual walkover engine: every showcase listing can be walked step by step,
+from the street through the front door and on through every room and up the
+stairs, in the browser, on any device, with no plugin and no third-party account.
+
+The portfolio is houses and villas in **Nepal and India**. Every listing has a
+3D/360° walkover, and the flagship — the Phewa Lakeside Villa in Pokhara — is
+ten 360° captures of one estate walked as a single house: lounge, dining hall,
+lake veranda, jetty, lakeshore, billiard room, games room, fireside pavilion,
+ridge lookout and squash court.
 
 The UI is a faithful build of the eight reference screens in the repository root
 (`luxury_real_estate_*/code.html` plus `sovereign_estate_system/DESIGN.md`) —
@@ -33,141 +40,152 @@ enable the optional Matterport and Street View providers.
 
 This is the part that matters, so it is worth knowing how it is put together.
 
-### Why a custom engine
+### A house you walk through, not a slideshow
 
-Matterport, Kuula, Pannellum and friends all solve the display problem, but they
-own the chrome, need an account or a key, and cannot be styled to match a brand.
-The engine is plain `three.js` in
-[`components/tour/panorama-engine.ts`](components/tour/panorama-engine.ts), with
-the graph maths it shares with the floor plan and dollhouse in
-[`lib/tour-graph.ts`](lib/tour-graph.ts). It is provider-agnostic: Matterport and
-Street View plug in beside it as adapters rather than replacing it.
+Most 360° viewers jump from photo to photo. This one keeps the whole house in a
+single 3D scene and moves the camera through it continuously, the way a person
+walks it:
+
+1. **The whole building first.** The tour opens outside, on a modelled house in
+   its setting: Himalayan foothills (optionally on a lakeshore), tropical
+   paddy country, coastline, desert or a snowy valley.
+2. **Up to the entrance.** *Walk to the entrance* flies down to the pavement and
+   walks up the garden path, step by step, to the porch. The front door swings
+   open as you arrive.
+3. **Through the door.** *Step inside* walks through the doorway into the hall.
+4. **One floor, room by room.** Doorways carry labels (*Walk through · Great
+   Room*). Choosing one walks up to that doorway, through it, and into the middle
+   of the room, where the photo is exact. Walking back out works the same way.
+5. **Up the stairs.** Stairs are real: the walk climbs the treads to the landing
+   and carries on to the rooms upstairs.
+
+The camera never cuts from one room to another. Choosing a room from the strip,
+the minimap, the floor plan or a number key walks every step of the route between
+here and there.
 
 ### How it works
 
-- **Walking, not cutting.** Each panorama is projected onto a proxy of the room it
-  was captured in — a floor 1.6 m below the lens, a ceiling and a round wall
-  (`room` on the node) — instead of onto an infinitely distant sphere. The camera
-  can therefore physically move: walking to the next room carries it through the
-  proxy of the room it is leaving, so the floor streams past and the doorway
-  grows, while the next room's panorama, projected from its own capture point,
-  fades in around it. One full-screen shader pass ray-casts both proxies.
-- **Door by door.** However a room is chosen — a floor ring, a click on the
-  floor, the filmstrip, the floor plan, the dollhouse, a number key — the engine
-  plans the shortest route through the nav graph (`findRoute`) and walks it one
-  leg at a time. Gentle turns are taken at speed on a curved path; sharp ones
-  slow to a stop and turn first. Arriving in a room re-bases the world on it, so
-  the view heading carries across every doorway without a snap.
-- **Continuous walking.** Holding `W`/`↑` keeps walking through whichever doorway
-  lies ahead; `A`/`D` steer. A step with no doorway ahead leans in and back.
-- **Guided tour.** A depth-first sweep that stands in every room once, pausing to
-  look around each new one, and stops the moment the visitor takes the controls.
-- **3D dollhouse.** Rooms are Voronoi outlines of the capture points, extruded
-  into walls and stacked by floor, each textured by projecting its own panorama
-  from its capture point. Near walls cull away as the camera orbits. Choosing a
-  room flies the camera down to eye height, then hands over to the walk.
-- **Scene graph.** A tour is a set of nodes (capture positions), each with
-  hotspots. `kind: 'nav'` hotspots are the walk targets, so routes, the floor
-  plan, the dollhouse and the minimap all derive from the same data the walk
-  uses — the map can never disagree with where you can actually go.
-- **Hotspots are DOM.** Floor markers are placed on the floor in 3D, projected
-  into viewport pixels and rendered as ordinary focusable `<button>` elements,
-  so they are keyboard-operable and screen-reader legible rather than sprites.
-- **No React in the render loop.** The engine owns its own state. Hotspots go
-  back to React only when the view changes; per-frame values (heading, leg
-  progress, walking speed, pointer) are CSS custom properties on the viewer, which
-  the compass, minimap marker and speed vignette read directly.
-- **Progressive load.** A 1024×512 preview paints within a frame or two, then the
-  4096×2048 capture swaps in behind it. Rooms one door away are prefetched, a
-  route's rooms are prefetched when it starts, and only the six most recent
-  full-resolution captures are kept on the GPU.
-- **360° video.** A node may name an equirectangular `video`; it plays in place of
-  the still (muted, looped) and the still stays the poster and fallback.
-- **Measurement.** View rays are intersected with the floor plane at eye height,
-  which is how a single-camera panorama can produce usable ground distances
-  without depth data. Readout toggles ft/m.
-- **Reduced motion.** With the OS setting (or the site toggle) on, legs become
-  in-place cross-fades with no head bob, speed kick or orbiting.
+- **Rooms are geometry, photos are projected onto them.** Every photographed
+  room is a box built from its real footprint: floor, walls with door openings,
+  and ceiling. Its panorama is projected onto that box from the point where it
+  was captured (`components/tour/engine/materials.ts`). At the capture point the
+  view is exactly the photograph. Anywhere else it shows true parallax, so
+  stepping forward, or looking through a doorway into the next room, behaves like
+  moving through a real space. Room sizes were measured off the photos
+  themselves (the floor/wall line of a wall at distance *d* sits at
+  `atan(1.6 / d)` below the horizon), and each photo is rotated so its own
+  doorways land on the plan's doors.
+- **Open-air spaces are domes.** Decks, terraces and trails are projected onto a
+  large dome with a walkable floor. From indoors a dome may only be seen through
+  its own doorway. Portal clipping cuts it (and everything else) to that opening,
+  so the garden, the modelled house and the photographed view never bleed
+  through each other.
+- **Everything else is modelled.** Stair halls, door frames, the front door,
+  facade, windows, roofs, porch, path, street, trees and sky are generated from
+  the plan (`build-house.ts`, `environment.ts`). No extra assets are needed; the
+  surface textures are drawn on canvas at load.
+- **The walk graph.** `lib/tour/walk-graph.ts` turns the plan into places to
+  stand, about a stride and a half (1.5 m) apart: a lattice across each space
+  anchored on its capture point, a stop either side of every door, a stop every
+  few treads, and the street-to-porch route. Walks are shortest paths on that
+  graph, eased and gently rounded at the corners, with the head turning along the
+  route and a slight step bob.
+- **Four views of one model.** *Whole house* (exterior), *Walk* (eye height),
+  *Dollhouse* (roof and ceilings lifted off, with any level isolated) and *Floor
+  plan* (straight down). Switching views is always a camera flight.
+- **Labels are DOM.** Door labels, info points and room names are projected into
+  viewport pixels and rendered as ordinary focusable `<button>` elements, so they
+  are keyboard-operable and screen-reader legible.
+- **No React in the render loop.** The engine owns its own state and publishes
+  labels and position through tiny external stores, so dragging the view never
+  re-renders the viewer.
+- **Progressive, budgeted textures.** Every room's 1024×512 preview loads up
+  front, which is enough for the dollhouse and for views through windows. The
+  4096×2048 capture loads for the room you are in and the rooms one door away,
+  and a small LRU budget (four on desktop, two on touch devices) keeps GPU memory
+  bounded.
+- **Measurement.** Two taps anywhere on a wall or floor give a true 3D distance,
+  because the rooms are real geometry. Readout toggles ft/m.
 
 ### What a visitor can do
 
 | Control | Behaviour |
 | --- | --- |
-| Click the floor / a ring | Walk through the doorway on that side |
-| `W` `↑` (hold) · `S` `↓` | Walk forward room after room · step back |
-| `A` `D` / `←` `→` · `R` `F` | Turn · look up and down |
-| Drag / swipe | Look around, with inertia |
-| Scroll / pinch / `+` `−` | Zoom (FOV 32°–100°) |
-| `1`–`9`, filmstrip, floor plan | Walk to that room, door by door |
-| `G` / play button | Guided tour of every room |
-| `Esc` | Stop walking, close overlays |
+| Click / tap the floor | Walk to that spot, one step at a time |
+| Click a doorway label | Walk through into the next room (or up/down the stairs) |
+| `↑` / `W`, `↓` / `S` | Step forward / back; hold to keep walking |
+| `←` `→` / `A` `D` | Turn |
+| Drag / swipe | Look around |
+| Scroll / pinch | Zoom |
+| `1`–`9` | Walk to a room |
+| `Esc` | Stop at the next step |
 | `?` | Keyboard shortcut sheet |
-| 3D dollhouse / Floor plan | The house in 3D, and flat, with route previews |
-| Measure | Two taps on the floor → distance |
+| Whole house / Walk / Dollhouse / Floor plan | Four views of the same model |
+| Guided tour | Street → front door → every room → stairs → every room upstairs |
+| Measure | Two taps on any surface → distance |
 | Auto-rotate, fullscreen, gyroscope | Standard viewer controls |
 
-In the listing-page panel the keys only apply while the pointer is over the
-viewer or focus is inside it; the full-viewport tour listens everywhere.
-
 Visited rooms are remembered per listing, so the minimap shows progress and the
-Saved board counts rooms walked — including rooms passed through on a route.
+Saved board counts rooms walked.
 
 ### Panorama assets
 
-85 CC0 equirectangular captures live in `public/panoramas/`, each stored twice —
-`<name>.jpg` at 4096×2048 and `<name>-preview.jpg` at 1024×512 (about 120 MB in
-all). They are sourced from [Poly Haven](https://polyhaven.com) (CC0) and scaled
-down from its 8K tone-mapped JPGs. They make up 20 houses of 3–8 rooms, one per
-tour-enabled listing; each capture is used once. The dollhouse is built from the
-same captures; there are no separate 3D models.
+31 CC0 equirectangular captures live in `public/panoramas/`, each stored twice:
+`<name>.jpg` at 4096×2048 and `<name>-preview.jpg` at 1024×512. They are sourced
+from [Poly Haven](https://polyhaven.com) (CC0) and downsized from Poly Haven's
+tone-mapped 8K JPEGs.
 
-Poly Haven has only a few dozen captures that read as rooms of a home, and none
-shows many rooms of the same house, so each house is assembled from captures of
-matching style rather than surveyed from one building. Swap in real listing
-captures as they become available.
+Ten of them are one property, all shot within a few hundred metres of each
+other, and make up the Phewa Lakeside Villa: `warm_bar`, `warm_restaurant`,
+`qwantani_patio`, `small_harbour_morning`, `lakeside`, `billiard_hall`,
+`empty_play_room`, `boma`, `qwantani_afternoon` and `squash_court`.
+
+Listing galleries use flat views cut from the same panoramas
+(`public/listings/views/`). Exterior photographs of the houses come from
+Wikimedia Commons under CC BY / CC BY-SA and carry their attribution in each
+listing's `credits`, shown under the property page.
 
 To swap in real captures, drop a 2:1 equirectangular JPEG pair into
-`public/panoramas/` and reference the basename from a tour node's `pano` field.
+`public/panoramas/` and reference the basename from a space's `pano` field. The
+more closely the room box matches the real room, the steadier the walk looks.
 
 ### Adding or editing a tour
 
-Tours are hand-authored in [`lib/data/tours.ts`](lib/data/tours.ts):
+Tours are small architectural models in [`lib/data/tours.ts`](lib/data/tours.ts).
+Plan space is metres, with x east and z south:
 
 ```ts
-{
-  id: 'great',
-  name: 'Great Room',
-  pano: 'lythwood_lounge',          // public/panoramas/lythwood_lounge.jpg
-  video: undefined,                 // optional equirect mp4/webm
-  floor: 1,
-  plan: { x: 0.41, y: 0.56 },       // 0-1 position on the floor plan
-  entryYaw: -36,                    // degrees the camera faces on a direct load
-  room: { radius: 6, ceiling: 3 },  // or { outdoor: true }
-  hotspots: [
-    { kind: 'nav', to: 'kitchen', yaw: 68, pitch: -12, label: 'Kitchen & Dining' },
-    { kind: 'info', yaw: -36, pitch: 4, label: 'Glazing', body: '…' },
-  ],
-}
+nodes: [
+  {
+    id: 'great',
+    name: 'Great Room',
+    pano: 'lythwood_lounge',                   // public/panoramas/lythwood_lounge.jpg
+    floor: 1,
+    rect: { x: -5.6, z: -9.4, w: 10.1, d: 7.4 }, // footprint
+    height: 3.2,                               // ceiling
+    capture: { x: 0, z: -7.6 },                // where the photo was taken
+    heading: -45,                              // compass bearing of the photo's yaw 0
+    view: -90,                                 // face this way on arrival
+    hotspots: [{ yaw: -40, pitch: 4, label: 'Glazing', body: '…' }],
+  },
+  { id: 'deck', kind: 'outdoor', pano: 'treetop_balcony', /* … */ },
+  { id: 'stairs', kind: 'stair', name: 'Stair Hall', floor: 1, rect: { /* … */ } },
+],
+doors: [
+  { a: 'entry', b: 'outside', x: 0, z: 5.0, width: 1.3, style: 'entrance' },
+  { a: 'entry', b: 'great', x: 0, z: -2.0, width: 1.4 },
+],
+stairs: [{ from: 'stairs', to: 'landing', run: { x: -6.2, z: -1.0, w: 1.2, d: 3.6 }, ascent: 's' }],
+site: { setting: 'himalayan', waterside: true, facade: 'stone', storey: 3.8, plinth: 0.45, approach: [/* street → porch */] },
 ```
 
-Yaw is degrees clockwise, and yaw 0 sits three-quarters of the way across the
-image: a feature at pixel column `x` of a `W`-wide panorama has yaw
-`x / W × 360 − 270` (wrapped to ±180). Pitch is degrees above the horizon, so a nav
-hotspot at `pitch: -12` sits on the floor ahead of you.
-
-Aim every nav hotspot at the doorway, arch or stair it leads through — walking
-moves the camera towards it — and give the destination a hotspot back, since
-that is what sets the direction you face on arrival. A floor marker's pitch sets
-how far the step is; override it with `distance` (metres) if needed. Map the tour
-to a listing in `toursBySlug`; listings without an entry fall back to one of the
-other walkthroughs so no `hasTour` card ever opens an empty viewer.
-
-The three original tours are written out in full in `lib/data/tours.ts`; the
-other seventeen use the compact `house()` builder in
-[`lib/data/estate-tours.ts`](lib/data/estate-tours.ts), which labels nav
-hotspots from the rooms they lead to (adding "Upstairs —" / "Downstairs —" across
-floors) and takes the title, agency, date, floor area and appliance note from the
-listing record.
+Doors are the single source of truth for where a visitor can go. The walk
+graph, floor plan, dollhouse and minimap all derive their routes from them.
+Hotspot yaw/pitch are in the photo's own frame (degrees, clockwise from the
+photo's forward). There are four models — the lakeside villa, a timber hill
+house, a garden villa and a haveli. Map one to a listing in `toursBySlug`, via
+`variant()` to retitle it and set its landscape; listings without an entry fall
+back to one of the four, so no `hasTour` card ever opens an empty viewer.
 
 ### Other providers
 
@@ -203,8 +221,9 @@ All 48 listing pages and 24 tour pages are statically generated at build time.
 
 The reference screens are static. These were added to make the site work:
 
-- **Natural-language search.** "5 bed ski property in Colorado under $3m with a
-  3d tour" parses into structured filters. One parser
+- **Natural-language search.** "lakeside villa in Pokhara with a 3d tour" parses
+  into structured filters (province, state and district names resolve to a
+  region). One parser
   ([`lib/smart-search.ts`](lib/smart-search.ts)) serves the hero console, the
   command palette and both listing pages, and each surface shows how the query
   was read as chips before you commit to it.
@@ -214,7 +233,8 @@ The reference screens are static. These were added to make the site work:
   query string, so a filtered view is linkable and survives a refresh.
 - **Map view.** Inline SVG plate-carrée world map with price markers — no tile
   provider, no key, no third-party request.
-- **Currency switcher** with live conversion across every price on the page.
+- **Currency switcher.** Prices show in the listing's own currency (NPR or INR,
+  grouped in lakhs and crores) until a display currency is chosen.
 - **Favourites, compare tray and saved searches**, persisted locally.
 - **Lead capture** posting to `/api/inquiries` with server-side validation.
 - `sitemap.xml`, `robots.txt`, per-listing OpenGraph metadata, skip link,
@@ -229,25 +249,27 @@ app/                      Routes (App Router)
   api/inquiries/          Lead intake endpoint
   property/[slug]/        Detail page + /tour immersive walkover
 components/
-  tour/                   panorama-engine.ts, dollhouse-engine.ts, TourViewer,
-                          Dollhouse, FloorPlan, adapters
+  tour/                   TourViewer, FloorPlan, Matterport / Street View adapters
+    engine/               WalkEngine (three.js), house + site builders, shaders
   listing/                Cards, filter rail, results browser, map view
   home/                   Hero carousel, search console, tour showcase
   property/               Media stage, price header, location map, inquiry form
   layout/ ui/             Header, footer, palette, compare tray, currency
 lib/
   data/                   Listings, agents, destinations, press, tours, nav
+  tour/                   Plan geometry + walk graph shared by engine and floor plan
   smart-search.ts         Query parser + filter/sort engine
-  tour-graph.ts           Walk routes, guided order, room outlines, headings
   format.ts               Currency conversion and display
   store.ts                Persisted session state (zustand)
-public/panoramas/         85 equirectangular captures, full + preview
+public/panoramas/         31 equirectangular captures, full + preview
+public/listings/          Listing exteriors (Commons) + views cut from the panoramas
 scripts/                  exFAT readlink shim + Next launcher (see below)
 ```
 
-Content in `lib/data/` was transcribed from the reference mockups — titles,
-locations, prices, bed/bath counts, agencies, Regents badges, press copy and the
-About milestones are the source screens' own values.
+Listings, agents and destinations in `lib/data/` are sample Nepal and India
+content: towns and coordinates are real, while prices, agents (example.com
+contacts, no portraits) and floor areas are illustrative. Press copy and the
+About milestones are still the reference mockups' own values.
 
 ---
 
@@ -278,10 +300,11 @@ plain `next dev` / `next build` / `next start`.
 ## Credits
 
 - Panoramas: [Poly Haven](https://polyhaven.com) (CC0)
-- Listing, portrait and destination photography: the reference mockups
+- Listing exteriors: Wikimedia Commons contributors, CC BY / CC BY-SA, credited
+  per listing (`credits` in `lib/data/properties.ts`, shown on the property page)
+- Room views, hero and destination images: cut from the Poly Haven panoramas
 - Fonts: Playfair Display, Montserrat, Cinzel (Google Fonts, self-hosted via
   `next/font`)
 - Icons: Font Awesome Free 6
-#   r e a l s t a t e 
- 
+#   r e a l s t a t e  
  

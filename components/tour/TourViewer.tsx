@@ -3,22 +3,21 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Property, PropertyTour } from '@/lib/types';
+import { OUTSIDE, captureNodes, nodeById, stairFor } from '@/lib/tour/layout';
+import { useSession } from '@/lib/store';
 import {
-  PanoramaEngine,
-  type FloorTarget,
-  type MeasurePoint,
-  type RouteState,
-  type ScreenHotspot,
-} from './panorama-engine';
-import type { DollhouseEngine } from './dollhouse-engine';
-import { Dollhouse } from './Dollhouse';
+  WalkEngine,
+  type EnginePose,
+  type EngineState,
+  type OverlayItem,
+  type TourMode,
+} from './engine/WalkEngine';
+import { createStore, useStore, type Store } from './engine-store';
 import { FloorPlan } from './FloorPlan';
 import { MatterportEmbed } from './MatterportEmbed';
 import { StreetViewEmbed } from './StreetViewEmbed';
-import { useSession } from '@/lib/store';
-import { findRoute, navHotspots, nodeById, nodeHeadings } from '@/lib/tour-graph';
 
-type Mode = 'walk' | 'dollhouse' | 'floorplan' | 'matterport' | 'streetview';
+type Provider = 'engine' | 'matterport' | 'streetview';
 
 interface TourViewerProps {
   property: Property;
@@ -28,173 +27,163 @@ interface TourViewerProps {
   className?: string;
 }
 
-export function TourViewer({
-  property,
-  tour,
-  layout = 'panel',
-  className = '',
-}: TourViewerProps) {
-  const mountRef = useRef<HTMLDivElement | null>(null);
-  const engineRef = useRef<PanoramaEngine | null>(null);
-  const shellRef = useRef<HTMLDivElement | null>(null);
-  const dollhouseRef = useRef<DollhouseEngine | null>(null);
-  const nodeRef = useRef(tour.startNode);
-  const pointerInside = useRef(false);
+interface Measure {
+  points: { x: number; y: number }[];
+  metres: number | null;
+}
 
-  const [nodeId, setNodeId] = useState(tour.startNode);
-  const [mode, setMode] = useState<Mode>('walk');
-  const [hotspots, setHotspots] = useState<ScreenHotspot[]>([]);
+const INITIAL_STATE: EngineState = {
+  mode: 'overview',
+  space: OUTSIDE,
+  floor: 1,
+  stop: -1,
+  walking: false,
+  flying: false,
+  guided: false,
+  level: 'all',
+};
+
+/**
+ * The walkover. It opens on the whole house from outside; from there a visitor
+ * walks up the path, through the front door and on through the house one step
+ * at a time — never jumping from room to room.
+ */
+export function TourViewer({ property, tour, layout = 'panel', className = '' }: TourViewerProps) {
+  const mountRef = useRef<HTMLDivElement | null>(null);
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  const engineRef = useRef<WalkEngine | null>(null);
+
+  const overlayStore = useMemo(() => createStore<OverlayItem[]>([]), []);
+  const poseStore = useMemo(() => createStore<EnginePose | null>(null), []);
+  const measureStore = useMemo(() => createStore<Measure>({ points: [], metres: null }), []);
+
+  const [provider, setProvider] = useState<Provider>('engine');
+  const [state, setState] = useState<EngineState>(INITIAL_STATE);
   const [progress, setProgress] = useState(0);
-  const [booted, setBooted] = useState(false);
-  const [route, setRoute] = useState<RouteState | null>(null);
-  const [leg, setLeg] = useState<{ from: string; to: string } | null>(null);
-  const [floorTarget, setFloorTarget] = useState<FloorTarget | null>(null);
-  const [dollhouseYaw, setDollhouseYaw] = useState(0);
-  const [overlayLeaving, setOverlayLeaving] = useState(false);
-  const [autoRotate, setAutoRotate] = useState(false);
-  const [measuring, setMeasuring] = useState(false);
-  const [measurePoints, setMeasurePoints] = useState<MeasurePoint[]>([]);
-  const [distance, setDistance] = useState<number | null>(null);
+  const [destination, setDestination] = useState<string | null>(null);
   const [activeInfo, setActiveInfo] = useState<string | null>(null);
+  const [measuring, setMeasuring] = useState(false);
+  const [units, setUnits] = useState<'m' | 'ft'>('ft');
   const [fullscreen, setFullscreen] = useState(false);
   const [gyro, setGyro] = useState(false);
+  const [autoRotate, setAutoRotate] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
-  const [units, setUnits] = useState<'m' | 'ft'>('ft');
-  const [coach, setCoach] = useState(true);
+  const [started, setStarted] = useState(false);
 
-  const markVisited = useSession((state) => state.markVisited);
-  const visitedNodes = useSession((state) => state.visitedNodes);
-  const storeReducedMotion = useSession((state) => state.reducedMotion);
-  const prefersReducedMotion = usePrefersReducedMotion();
-  const reducedMotion = storeReducedMotion || prefersReducedMotion;
-
-  const node = useMemo(() => nodeById(tour, nodeId) ?? tour.nodes[0], [tour, nodeId]);
-  const headings = useMemo(() => nodeHeadings(tour), [tour]);
-  const neighbours = useMemo(() => new Set(navHotspots(node).map((h) => h.to)), [node]);
-  const visited = useMemo(
+  // Keyboard input belongs to the tour when it fills the screen, or when the
+  // visitor is pointing at or focused inside it; otherwise arrows scroll the page.
+  const hoveredRef = useRef(false);
+  const handlesKeys = useCallback(
     () =>
-      tour.nodes
-        .filter((n) => visitedNodes.includes(`${property.slug}:${n.id}`))
-        .map((n) => n.id),
+      layout === 'immersive' ||
+      hoveredRef.current ||
+      Boolean(shellRef.current?.contains(document.activeElement)),
+    [layout],
+  );
+  const walkIdRef = useRef(0);
+
+  const markVisited = useSession((session) => session.markVisited);
+  const visitedNodes = useSession((session) => session.visitedNodes);
+  const reducedMotion = useSession((session) => session.reducedMotion);
+
+  const rooms = useMemo(() => captureNodes(tour), [tour]);
+  const visited = useMemo(
+    () => tour.nodes.filter((n) => visitedNodes.includes(`${property.slug}:${n.id}`)).map((n) => n.id),
     [tour.nodes, visitedNodes, property.slug],
   );
-
-  const embedded = mode === 'matterport' || mode === 'streetview';
-  const overlay = mode === 'dollhouse' || mode === 'floorplan';
-  const immersive = layout === 'immersive';
+  const visitedRooms = rooms.filter((room) => visited.includes(room.id)).length;
 
   // --------------------------------------------------------------- engine ---
 
   useEffect(() => {
-    if (!mountRef.current || embedded) return undefined;
-    if (engineRef.current) return undefined;
-
-    const engine = new PanoramaEngine(mountRef.current, tour, {
-      onHotspots: setHotspots,
-      onLoadProgress: setProgress,
-      onNodeChange: (id) => {
-        nodeRef.current = id;
-        setNodeId(id);
-        setActiveInfo(null);
-        setBooted(true);
-        markVisited(property.slug, id);
+    if (provider !== 'engine' || !mountRef.current) return undefined;
+    const prefersReduced =
+      reducedMotion || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const engine = new WalkEngine(
+      mountRef.current,
+      tour,
+      {
+        onState: setState,
+        onOverlay: overlayStore.set,
+        onPose: poseStore.set,
+        onProgress: setProgress,
+        onVisit: (space) => markVisited(property.slug, space),
+        onMeasure: (points, metres) => measureStore.set({ points, metres }),
       },
-      onNodeReady: () => setProgress(1),
-      onRoute: setRoute,
-      onLeg: setLeg,
-      onFloorTarget: setFloorTarget,
-      onMeasureUpdate: (points, metres) => {
-        setMeasurePoints(points);
-        setDistance(metres);
-      },
-      onInteract: () => setCoach(false),
-      reducedMotion,
-      styleTarget: shellRef.current ?? undefined,
-      keyScope: immersive ? null : shellRef.current,
-    });
+      { reducedMotion: prefersReduced, handlesKeys },
+    );
     engineRef.current = engine;
-    engine.start(nodeRef.current);
+    setState(engine.getState());
 
     const onResize = () => engine.resize();
     window.addEventListener('resize', onResize);
     const observer = new ResizeObserver(onResize);
     observer.observe(mountRef.current);
-
     return () => {
       window.removeEventListener('resize', onResize);
       observer.disconnect();
       engine.dispose();
       engineRef.current = null;
-      setRoute(null);
-      setLeg(null);
-      setHotspots([]);
+      overlayStore.set([]);
     };
-    // Engine lifecycle is intentionally tied to the mount, not to node changes.
+    // The engine is rebuilt only when the tour or provider changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [embedded, tour]);
+  }, [provider, tour]);
 
-  useEffect(() => {
-    engineRef.current?.setReducedMotion(reducedMotion);
-  }, [reducedMotion]);
+  const walkTo = useCallback(
+    (space: string) => {
+      const engine = engineRef.current;
+      if (!engine) return;
+      setStarted(true);
+      setActiveInfo(null);
+      setDestination(space === OUTSIDE ? 'Front garden' : nodeById(tour, space)?.name ?? null);
+      // A newer walk supersedes this one; only the latest may clear the pill.
+      const id = ++walkIdRef.current;
+      const walk =
+        space === OUTSIDE ? engine.walkToStop(engine.graph.porch) : engine.walkToSpace(space);
+      void walk.then(() => {
+        if (walkIdRef.current === id) setDestination(null);
+      });
+    },
+    [tour],
+  );
 
-  // Nothing to draw under an opaque overlay.
-  useEffect(() => {
-    engineRef.current?.setPaused(overlay && !overlayLeaving);
-  }, [overlay, overlayLeaving]);
-
-  // The coach card bows out on its own after a few seconds.
-  useEffect(() => {
-    if (!coach || !booted) return undefined;
-    const timer = window.setTimeout(() => setCoach(false), 9000);
-    return () => window.clearTimeout(timer);
-  }, [coach, booted]);
-
-  /** Every way of choosing a room ends here: a walk through the house, door by door. */
-  const walkTo = useCallback((targetId: string) => {
-    setActiveInfo(null);
-    setCoach(false);
-    setMode((current) => (current === 'floorplan' || current === 'dollhouse' ? 'walk' : current));
-    engineRef.current?.walkTo(targetId);
-  }, []);
-
-  const toggleGuided = useCallback(() => {
+  const approach = useCallback(() => {
     const engine = engineRef.current;
     if (!engine) return;
-    setCoach(false);
-    setMode('walk');
-    if (route?.kind === 'guided') engine.stopRoute();
-    else engine.playGuidedTour();
-  }, [route?.kind]);
+    setStarted(true);
+    setDestination('the front door');
+    const id = ++walkIdRef.current;
+    void engine.approach().then(() => {
+      if (walkIdRef.current === id) setDestination(null);
+    });
+  }, []);
 
-  // --------------------------------------------------------------- chrome ---
-
-  const openDollhouse = () => {
-    if (mode === 'dollhouse') {
-      setMode('walk');
-      return;
+  const setMode = (mode: TourMode) => {
+    setActiveInfo(null);
+    if (mode === 'walk') setStarted(true);
+    if (mode !== 'walk' && measuring) {
+      setMeasuring(false);
+      engineRef.current?.setMeasuring(false);
     }
-    const engine = engineRef.current;
-    if (route?.kind === 'guided') engine?.stopRoute();
-    setDollhouseYaw(engine?.getView().yaw ?? 0);
-    setMode('dollhouse');
+    engineRef.current?.setMode(mode);
   };
 
-  /** Fly down into the room you stand in, then walk from there to the one chosen. */
-  const enterFromDollhouse = async (targetId: string) => {
+  const toggleGuided = () => {
     const engine = engineRef.current;
-    if (!engine || overlayLeaving) return;
-    const here = engine.currentNodeId ?? nodeId;
-    dollhouseRef.current?.setRoute(findRoute(tour, here, targetId));
-    await dollhouseRef.current?.flyInto(here, engine.getView().yaw);
-    setOverlayLeaving(true);
-    window.setTimeout(
-      () => {
-        setMode('walk');
-        setOverlayLeaving(false);
-        if (targetId !== here) engine.walkTo(targetId);
-      },
-      reducedMotion ? 0 : 320,
-    );
+    if (!engine) return;
+    if (state.guided) {
+      engine.stopGuided();
+      return;
+    }
+    setStarted(true);
+    void engine.playGuided();
+  };
+
+  const toggleMeasure = () => {
+    const next = !measuring;
+    setMeasuring(next);
+    engineRef.current?.setMeasuring(next);
   };
 
   const toggleAutoRotate = () => {
@@ -203,11 +192,15 @@ export function TourViewer({
     engineRef.current?.setAutoRotate(next);
   };
 
-  const toggleMeasure = () => {
-    const next = !measuring;
-    setMeasuring(next);
-    setMode('walk');
-    engineRef.current?.setMeasuring(next);
+  const toggleGyro = async () => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    if (gyro) {
+      engine.disableGyro();
+      setGyro(false);
+      return;
+    }
+    setGyro(await engine.enableGyro());
   };
 
   const toggleFullscreen = async () => {
@@ -215,22 +208,9 @@ export function TourViewer({
     if (!element) return;
     if (document.fullscreenElement) {
       await document.exitFullscreen();
-      setFullscreen(false);
     } else {
       await element.requestFullscreen().catch(() => undefined);
-      setFullscreen(true);
     }
-  };
-
-  const toggleGyro = async () => {
-    if (!engineRef.current) return;
-    if (gyro) {
-      engineRef.current.disableGyro();
-      setGyro(false);
-      return;
-    }
-    const granted = await engineRef.current.enableGyro();
-    setGyro(granted);
   };
 
   useEffect(() => {
@@ -239,372 +219,274 @@ export function TourViewer({
     return () => document.removeEventListener('fullscreenchange', onChange);
   }, []);
 
-  // Number keys walk to a room; G runs the guided tour; `?` opens the key sheet.
+  // Number keys walk to a room; `?` opens the shortcut sheet.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-      const shell = shellRef.current;
-      const owns =
-        immersive || pointerInside.current || Boolean(shell?.contains(document.activeElement));
-      if (!owns) return;
-
+      if (!handlesKeys()) return;
       if (event.key === '?') setShowHelp((open) => !open);
       if (event.key === 'Escape') {
         setActiveInfo(null);
         setShowHelp(false);
-        if (mode === 'dollhouse' || mode === 'floorplan') setMode('walk');
-        else engineRef.current?.stopRoute();
       }
-      if (event.key === 'g' || event.key === 'G') toggleGuided();
       const index = Number(event.key);
-      if (!Number.isNaN(index) && index >= 1 && index <= Math.min(9, tour.nodes.length)) {
-        walkTo(tour.nodes[index - 1].id);
+      if (provider === 'engine' && Number.isInteger(index) && index >= 1 && index <= Math.min(9, rooms.length)) {
+        walkTo(rooms[index - 1].id);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [tour.nodes, walkTo, toggleGuided, immersive, mode]);
+  }, [rooms, walkTo, provider, handlesKeys]);
 
-  const distanceLabel =
-    distance == null
-      ? null
-      : units === 'ft'
-        ? `${(distance * 3.28084).toFixed(1)} ft`
-        : `${distance.toFixed(2)} m`;
+  // ------------------------------------------------------------ derived ---
 
+  const immersive = layout === 'immersive';
   const hasMatterport = Boolean(tour.modelId);
-  const heading = headings.get(node.id) ?? 0;
-  const routeNames = (route?.path ?? []).map((id) => nodeById(tour, id)?.name ?? id);
-  const showRouteHud =
-    route && mode === 'walk' && (route.kind !== 'step' || route.path.length > 2);
-  const routeProgress = routeSummary(route);
+  const inHouse = state.space !== OUTSIDE;
+  const here = nodeById(tour, state.space);
+  const levelName = tour.floors.find((f) => f.level === state.floor)?.name ?? `Level ${state.floor}`;
+  const stair = here ? stairFor(tour, here.id) ?? tour.stairs.find((s) => nodeById(tour, s.from)?.floor === state.floor) : undefined;
+  const stairTarget = stair
+    ? nodeById(tour, state.floor === nodeById(tour, stair.from)?.floor ? stair.to : stair.from)
+    : undefined;
+  const cutaway = state.mode === 'dollhouse' || state.mode === 'floorplan';
+  const strip = [...rooms].sort((a, b) => {
+    const aHere = a.floor === state.floor ? 0 : 1;
+    const bHere = b.floor === state.floor ? 0 : 1;
+    return aHere - bHere;
+  });
+  const startName = nodeById(tour, tour.startNode)?.name ?? 'the house';
 
   return (
     <div
       ref={shellRef}
       className={[
-        'relative overflow-hidden bg-ink-950 text-white',
+        'relative select-none overflow-hidden bg-ink-950 text-white',
         immersive ? 'h-full w-full' : 'aspect-[16/10] w-full',
         className,
       ].join(' ')}
       data-purpose="tour-viewer"
       onPointerEnter={() => {
-        pointerInside.current = true;
+        hoveredRef.current = true;
       }}
       onPointerLeave={() => {
-        pointerInside.current = false;
+        hoveredRef.current = false;
       }}
     >
       {/* ---------------------------------------------------------- stage -- */}
-      {mode === 'matterport' && tour.modelId ? (
+      {provider === 'matterport' && tour.modelId ? (
         <MatterportEmbed modelId={tour.modelId} title={tour.title} />
-      ) : mode === 'streetview' ? (
+      ) : provider === 'streetview' ? (
         <StreetViewEmbed lat={property.lat} lng={property.lng} title={property.title} />
       ) : (
         <>
           <div
             ref={mountRef}
-            className="absolute inset-0"
-            style={{ cursor: measuring ? 'crosshair' : undefined }}
+            className={['absolute inset-0', measuring ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'].join(' ')}
           />
-
-          {/* Speed vignette: deepens while walking, driven by --tour-speed. */}
-          <div
-            className="pointer-events-none absolute inset-0 z-[1]"
-            style={{
-              opacity: 'calc(var(--tour-speed, 0) * 0.85)',
-              background:
-                'radial-gradient(ellipse at center, transparent 42%, rgba(6, 8, 10, 0.62) 100%)',
-            }}
-            aria-hidden="true"
+          <OverlayLayer
+            store={overlayStore}
+            activeInfo={activeInfo}
+            onInfo={setActiveInfo}
+            onWalk={walkTo}
+            onEntrance={approach}
           />
-
-          {/* Projected hotspots, rendered as real DOM so they stay accessible. */}
-          <div className="pointer-events-none absolute inset-0 z-[2]">
-            {mode === 'walk' &&
-              hotspots.map((spot) => {
-                if (!spot.visible) return null;
-                const destination = spot.hotspot.to ? nodeById(tour, spot.hotspot.to) : null;
-                const levels = destination ? destination.floor - node.floor : 0;
-                return (
-                  <div
-                    key={spot.key}
-                    className="pointer-events-auto absolute animate-fade-in"
-                    style={{
-                      left: spot.x,
-                      top: spot.y,
-                      transform: `translate(-50%, -50%) scale(${spot.scale})`,
-                    }}
-                  >
-                    {spot.hotspot.kind === 'nav' && destination ? (
-                      <button
-                        type="button"
-                        onClick={() => walkTo(destination.id)}
-                        className="tour-waypoint group"
-                        title={`Walk to ${spot.hotspot.label}`}
-                        style={
-                          {
-                            '--tilt': `${Math.round(clampNumber(70 + spot.hotspot.pitch, 44, 62))}deg`,
-                          } as React.CSSProperties
-                        }
-                      >
-                        {levels !== 0 ? (
-                          <span className="tour-waypoint-stairs" aria-hidden="true">
-                            <i className="fa-solid fa-stairs text-[15px]" />
-                            <i
-                              className={`fa-solid ${levels > 0 ? 'fa-caret-up' : 'fa-caret-down'} absolute -right-1 -top-1 text-[12px] text-gold-400`}
-                            />
-                          </span>
-                        ) : (
-                          <span className="tour-waypoint-disc" aria-hidden="true" />
-                        )}
-                        <span className="tour-waypoint-label">{spot.hotspot.label}</span>
-                        <span className="sr-only">Walk to {spot.hotspot.label}</span>
-                      </button>
-                    ) : (
-                      <div className="relative">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setActiveInfo(activeInfo === spot.key ? null : spot.key)
-                          }
-                          className="flex h-7 w-7 items-center justify-center rounded-full border border-white/80 bg-sovereign-sapphire/85 text-[11px] font-bold text-white shadow-lg backdrop-blur-sm transition-transform hover:scale-110"
-                          aria-expanded={activeInfo === spot.key}
-                        >
-                          i<span className="sr-only">{spot.hotspot.label}</span>
-                        </button>
-                        {activeInfo === spot.key && (
-                          <div className="absolute left-1/2 top-9 z-20 w-60 -translate-x-1/2 animate-fade-up rounded-xs border border-white/12 bg-black/85 p-3 text-left backdrop-blur-md">
-                            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-gold-500">
-                              {spot.hotspot.label}
-                            </p>
-                            <p className="mt-1 text-[11px] leading-relaxed text-ink-100">
-                              {spot.hotspot.body}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-
-            {/* Measurement overlay */}
-            {measurePoints.length > 0 && (
-              <svg className="absolute inset-0 h-full w-full" aria-hidden="true">
-                {measurePoints.length === 2 && (
-                  <line
-                    x1={measurePoints[0].x}
-                    y1={measurePoints[0].y}
-                    x2={measurePoints[1].x}
-                    y2={measurePoints[1].y}
-                    stroke="#c5a869"
-                    strokeWidth={2}
-                    strokeDasharray="6 4"
-                  />
-                )}
-                {measurePoints.map((point, index) => (
-                  <circle
-                    key={index}
-                    cx={point.x}
-                    cy={point.y}
-                    r={5}
-                    fill="#c5a869"
-                    stroke="#fff"
-                    strokeWidth={1.5}
-                  />
-                ))}
-              </svg>
-            )}
-
-            {distanceLabel && measurePoints.length === 2 && (
+          {measuring && <MeasureLayer store={measureStore} units={units} />}
+          <p className="sr-only" aria-live="polite">
+            {state.mode === 'walk' ? `Now in ${inHouse ? here?.name ?? 'the house' : 'the front garden'}` : ''}
+          </p>
+          {progress < 1 && (
+            <div className="pointer-events-none absolute inset-x-0 top-0 z-50 h-0.5 bg-white/10">
               <div
-                className="pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 rounded-full bg-gold-500 px-2.5 py-1 text-[11px] font-bold text-ink-900 shadow-lg"
-                style={{
-                  left: (measurePoints[0].x + measurePoints[1].x) / 2,
-                  top: (measurePoints[0].y + measurePoints[1].y) / 2,
-                }}
-              >
-                {distanceLabel}
-              </div>
-            )}
-          </div>
-
-          {/* The room a click on the floor would walk to, beside the cursor. */}
-          {floorTarget?.label && mode === 'walk' && (
-            <div
-              className="pointer-events-none absolute z-[3]"
-              style={{ left: 'var(--tour-px, -100px)', top: 'var(--tour-py, -100px)' }}
-            >
-              <span className="ml-5 mt-4 block whitespace-nowrap rounded-full bg-gold-500 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-900 shadow-lg">
-                <i className="fa-solid fa-person-walking mr-1.5" aria-hidden="true" />
-                {floorTarget.label}
-              </span>
-            </div>
-          )}
-
-          {/* Loading veil — only for the first room; later rooms load mid-walk. */}
-          {!booted && (
-            <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-ink-950/90 backdrop-blur-sm">
-              <div className="h-px w-40 overflow-hidden bg-white/20">
-                <div
-                  className="h-full bg-gold-500 transition-all duration-300"
-                  style={{ width: `${Math.round(progress * 100)}%` }}
-                />
-              </div>
-              <p className="mt-3 font-crest text-[10px] uppercase tracking-[0.28em] text-white/70">
-                Entering {node.name}
-              </p>
+                className="h-full bg-gold-500 transition-all duration-300"
+                style={{ width: `${Math.round(progress * 100)}%` }}
+              />
             </div>
           )}
         </>
       )}
 
       {/* ------------------------------------------------------- top bar -- */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-40 flex items-start justify-between bg-gradient-to-b from-black/80 via-black/40 to-transparent px-3 pb-8 pt-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="rounded bg-black/60 px-2 py-0.5 font-mono text-[11px] tracking-wide">
-            {tour.nodes.findIndex((n) => n.id === node.id) + 1}/{tour.nodes.length}
-          </span>
-          <span className="min-w-0">
-            <span className="block truncate text-[13px] font-medium tracking-tight drop-shadow-md">
-              {mode === 'matterport'
-                ? 'Matterport'
-                : mode === 'streetview'
-                  ? 'Street View'
-                  : node.name}
-            </span>
-            <span className="block truncate text-[10px] text-ink-100 drop-shadow-md">
-              {tour.title} • Presented by {tour.capturedBy}
-            </span>
-          </span>
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-40 flex items-start justify-between bg-gradient-to-b from-black/70 via-black/30 to-transparent px-3 pb-10 pt-3">
+        <div className="min-w-0">
+          <p className="flex items-center gap-2 text-[13px] font-medium tracking-tight drop-shadow-md">
+            {provider === 'matterport' ? (
+              'Matterport'
+            ) : provider === 'streetview' ? (
+              'Street View'
+            ) : state.mode === 'overview' ? (
+              <>
+                <i className="fa-solid fa-house text-[11px] text-gold-400" aria-hidden="true" />
+                The whole house
+              </>
+            ) : cutaway ? (
+              <>
+                <i className="fa-solid fa-cube text-[11px] text-gold-400" aria-hidden="true" />
+                {state.mode === 'dollhouse' ? 'Dollhouse' : 'Floor plan'}
+              </>
+            ) : (
+              <>
+                <i className="fa-solid fa-location-dot text-[11px] text-gold-400" aria-hidden="true" />
+                <span className="truncate">{inHouse ? here?.name : 'Front garden'}</span>
+                <span className="hidden text-[11px] font-normal text-white/60 sm:inline">
+                  · {inHouse ? levelName : 'Outside'}
+                </span>
+              </>
+            )}
+          </p>
+          <p className="mt-0.5 truncate text-[10px] text-ink-100 drop-shadow-md">
+            {tour.title} • Presented by {tour.capturedBy}
+          </p>
         </div>
 
         <div className="pointer-events-auto flex items-center gap-2">
-          {!embedded && (
-            <div
-              className="tour-glass hidden h-9 w-9 items-center justify-center rounded-full sm:flex"
-              title="Facing"
-            >
-              <i
-                className="fa-solid fa-location-arrow text-[12px] text-gold-500"
-                style={{
-                  transform: `rotate(calc((var(--tour-yaw, 0) + ${heading.toFixed(1)}) * 1deg - 45deg))`,
-                }}
-                aria-hidden="true"
-              />
-              <span className="sr-only">Compass</span>
-            </div>
-          )}
+          {provider === 'engine' && state.mode === 'walk' && <Compass store={poseStore} />}
           <button type="button" className="tour-pill px-3 text-[11px]" onClick={toggleFullscreen}>
-            <i
-              className={`fa-solid ${fullscreen ? 'fa-compress' : 'fa-expand'} text-[12px]`}
-              aria-hidden="true"
-            />
+            <i className={`fa-solid ${fullscreen ? 'fa-compress' : 'fa-expand'} text-[12px]`} aria-hidden="true" />
             <span className="ml-1.5 hidden sm:inline">{fullscreen ? 'Exit' : 'Fullscreen'}</span>
           </button>
         </div>
       </div>
 
-      {/* ----------------------------------------------------- route HUD -- */}
-      {showRouteHud && route && (
-        <div className="pointer-events-none absolute inset-x-0 top-14 z-40 flex justify-center px-3">
-          <div className="tour-glass pointer-events-auto flex max-w-full animate-fade-down items-center gap-3 rounded-full py-1.5 pl-4 pr-1.5 shadow-pill">
-            <span className="eyebrow shrink-0 text-gold-400">
-              {route.kind === 'guided' ? 'Guided tour' : 'Walking'}
-            </span>
-
-            {route.kind === 'guided' ? (
-              <span className="flex min-w-0 items-center gap-2 text-[11px]">
-                <span className="truncate text-white">
-                  {route.dwelling ? `Looking around ${node.name}` : node.name}
-                </span>
-                <span className="shrink-0 font-mono text-white/55">
-                  {routeProgress.seen}/{routeProgress.total}
-                </span>
-              </span>
-            ) : (
-              <ol className="flex min-w-0 items-center gap-1.5 overflow-hidden text-[11px]">
-                {routeNames.map((name, index) => {
-                  if (routeNames.length > 5 && index > 0 && index < routeNames.length - 1 && Math.abs(index - route.index) > 1) {
-                    return index === 1 || index === routeNames.length - 2 ? (
-                      <li key={index} className="text-white/35">…</li>
-                    ) : null;
-                  }
-                  const state =
-                    index < route.index ? 'done' : index === route.index ? 'here' : 'ahead';
-                  return (
-                    <li key={index} className="flex shrink-0 items-center gap-1.5">
-                      {index > 0 && (
-                        <i className="fa-solid fa-chevron-right text-[8px] text-white/35" aria-hidden="true" />
-                      )}
-                      <span
-                        className={
-                          state === 'here'
-                            ? 'font-semibold text-gold-400'
-                            : state === 'done'
-                              ? 'text-white/45 line-through decoration-white/25'
-                              : 'text-white/85'
-                        }
-                      >
-                        {name}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ol>
-            )}
-
-            {route.loading && (
-              <span className="flex shrink-0 items-center gap-1.5 text-[10px] text-white/60">
-                <i className="fa-solid fa-circle-notch fa-spin" aria-hidden="true" />
-                Loading
-              </span>
-            )}
-
-            <button
-              type="button"
-              onClick={() => engineRef.current?.stopRoute()}
-              className="flex h-7 shrink-0 items-center gap-1.5 rounded-full bg-white/10 px-3 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors hover:bg-white hover:text-ink-900"
-            >
-              <i className="fa-solid fa-stop text-[9px]" aria-hidden="true" />
-              Stop
+      {/* ----------------------------------------------- journey guidance -- */}
+      {provider === 'engine' && state.mode === 'overview' && !state.flying && !started && (
+        <div className="pointer-events-auto absolute left-3 top-16 z-30 w-[min(20rem,calc(100%-1.5rem))] animate-fade-up rounded-xs border border-white/12 bg-ink-950/80 p-4 backdrop-blur-md">
+          <p className="eyebrow text-[9px] text-gold-400">Virtual walkover</p>
+          <h3 className="mt-1 font-serif-title text-[17px] leading-snug">Start at the street</h3>
+          <p className={['mt-1.5 text-[11.5px] leading-relaxed text-white/70', immersive ? '' : 'hidden lg:block'].join(' ')}>
+            Take in the whole house, then walk up to the front door and step inside — one step at a
+            time, through every doorway and up the stairs.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" className="btn-gold px-3.5 py-2 text-[10.5px]" onClick={approach}>
+              <i className="fa-solid fa-person-walking mr-1.5" aria-hidden="true" />
+              Walk to the entrance
+            </button>
+            <button type="button" className="btn-white px-3.5 py-2 text-[10.5px]" onClick={toggleGuided}>
+              <i className="fa-solid fa-play mr-1.5" aria-hidden="true" />
+              Guided tour
             </button>
           </div>
         </div>
       )}
 
-      {/* --------------------------------------------------- coach card --- */}
-      {coach && booted && mode === 'walk' && !route && (
+      {provider === 'engine' && state.mode === 'walk' && !inHouse && !state.walking && !state.flying && (
+        <div className="pointer-events-auto absolute inset-x-0 bottom-28 z-30 flex justify-center px-3">
+          <div className="flex animate-fade-up flex-wrap items-center justify-center gap-2 rounded-full border border-white/12 bg-ink-950/75 p-1.5 backdrop-blur-md">
+            <button type="button" className="btn-gold rounded-full px-4 py-2 text-[10.5px]" onClick={() => walkTo(tour.startNode)}>
+              <i className="fa-solid fa-door-open mr-1.5" aria-hidden="true" />
+              Step inside — {startName}
+            </button>
+            <button type="button" className="rounded-full px-3 py-2 text-[10.5px] font-semibold uppercase tracking-wider text-white/75 hover:text-white" onClick={() => setMode('overview')}>
+              See the whole house
+            </button>
+          </div>
+        </div>
+      )}
+
+      {provider === 'engine' && (state.walking || state.guided) && destination && (
+        <div className="pointer-events-auto absolute left-1/2 top-14 z-40 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/12 bg-ink-950/75 py-1 pl-3 pr-1 text-[11px] backdrop-blur-md">
+          <i className="fa-solid fa-shoe-prints text-[10px] text-gold-400" aria-hidden="true" />
+          <span className="whitespace-nowrap">Walking to {destination}</span>
+          <button
+            type="button"
+            className="rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider hover:bg-white/20"
+            onClick={() => engineRef.current?.halt()}
+          >
+            Stop
+          </button>
+        </div>
+      )}
+      {provider === 'engine' && state.guided && !destination && (
+        <div className="pointer-events-auto absolute left-1/2 top-14 z-40 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/12 bg-ink-950/75 py-1 pl-3 pr-1 text-[11px] backdrop-blur-md">
+          <i className="fa-solid fa-play text-[9px] text-gold-400" aria-hidden="true" />
+          <span className="whitespace-nowrap">Guided tour</span>
+          <button type="button" className="rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider hover:bg-white/20" onClick={toggleGuided}>
+            Stop
+          </button>
+        </div>
+      )}
+
+      {/* ------------------------------------------------ room strip -------- */}
+      {provider === 'engine' && (state.mode === 'walk' || cutaway) && (
         <div
           className={[
-            'pointer-events-none absolute left-3 z-20 w-[min(21rem,calc(100%-1.5rem))]',
-            immersive ? 'bottom-[7.75rem]' : 'bottom-[6.5rem]',
+            'pointer-events-none absolute inset-x-0 z-20 overflow-x-auto px-3 no-scrollbar',
+            immersive ? 'bottom-16' : 'bottom-14',
           ].join(' ')}
         >
-          <div className="tour-glass pointer-events-auto w-full animate-fade-up rounded-xs p-4 shadow-pill">
-            <div className="flex items-start justify-between gap-4">
-              <p className="eyebrow text-gold-400">Walk through the home</p>
+          <div className="pointer-events-auto mx-auto flex w-max items-end gap-2">
+            {strip.map((room) => {
+              const isHere = room.id === state.space;
+              const otherLevel = room.floor !== state.floor;
+              return (
+                <button
+                  key={room.id}
+                  type="button"
+                  onClick={() => walkTo(room.id)}
+                  className={[
+                    'group relative shrink-0 overflow-hidden rounded-sm border transition-all',
+                    immersive ? 'h-12 w-20' : 'h-10 w-16',
+                    isHere
+                      ? 'border-gold-500 ring-1 ring-gold-500'
+                      : otherLevel
+                        ? 'border-white/15 opacity-55 hover:opacity-100'
+                        : 'border-white/40 hover:border-white',
+                  ].join(' ')}
+                  title={`Walk to ${room.name}${otherLevel ? ' (via the stairs)' : ''}`}
+                >
+                  <img
+                    src={`/panoramas/${room.pano}-preview.jpg`}
+                    alt=""
+                    loading="lazy"
+                    className="h-full w-full object-cover"
+                  />
+                  {otherLevel && (
+                    <span className="absolute right-0.5 top-0.5 rounded-sm bg-black/70 px-1 text-[7.5px] font-bold uppercase tracking-wider">
+                      L{room.floor}
+                    </span>
+                  )}
+                  {visited.includes(room.id) && !isHere && (
+                    <span className="absolute left-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-gold-500" aria-hidden="true" />
+                  )}
+                  <span className="absolute inset-x-0 bottom-0 truncate bg-black/70 px-1 py-0.5 text-[8.5px] font-semibold uppercase tracking-[0.1em]">
+                    {room.name}
+                  </span>
+                  <span className="sr-only">Walk to {room.name}</span>
+                </button>
+              );
+            })}
+            {state.mode === 'walk' && inHouse && stairTarget && (
               <button
                 type="button"
-                className="-mr-1 -mt-1 text-white/50 transition-colors hover:text-white"
-                onClick={() => setCoach(false)}
-                aria-label="Dismiss tips"
+                onClick={() => walkTo(stairTarget.id)}
+                className={[
+                  'flex shrink-0 flex-col items-center justify-center rounded-sm border border-white/40 bg-ink-950/70 px-2 text-center backdrop-blur-sm transition-colors hover:border-white',
+                  immersive ? 'h-12 w-20' : 'h-10 w-16',
+                ].join(' ')}
+                title={`Take the stairs to ${stairTarget.name}`}
               >
-                <i className="fa-solid fa-xmark" aria-hidden="true" />
+                <i className="fa-solid fa-stairs text-[12px] text-gold-400" aria-hidden="true" />
+                <span className="mt-0.5 text-[8px] font-semibold uppercase leading-tight tracking-[0.08em]">
+                  {stairTarget.floor > state.floor ? 'Upstairs' : 'Downstairs'}
+                </span>
               </button>
-            </div>
-            <ul className="mt-3 space-y-2 text-[12px] text-white/80">
-              <CoachTip icon="fa-hand-pointer" text="Click the floor or a ring to step into the next room" />
-              <CoachTip icon="fa-arrow-up" text="Hold W or ↑ to keep walking — A/D or ←/→ to turn" />
-              <CoachTip icon="fa-cube" text="Open the 3D dollhouse and pick any room — you walk there door by door" />
-            </ul>
-            <button type="button" onClick={toggleGuided} className="btn-gold mt-4 w-full justify-center">
-              <i className="fa-solid fa-play mr-2 text-[11px]" aria-hidden="true" />
-              Start guided tour
-            </button>
+            )}
+            {state.mode === 'walk' && inHouse && (
+              <button
+                type="button"
+                onClick={() => walkTo(OUTSIDE)}
+                className={[
+                  'flex shrink-0 flex-col items-center justify-center rounded-sm border border-white/25 bg-ink-950/70 px-2 text-center backdrop-blur-sm transition-colors hover:border-white',
+                  immersive ? 'h-12 w-20' : 'h-10 w-16',
+                ].join(' ')}
+                title="Walk back out of the front door"
+              >
+                <i className="fa-solid fa-door-open text-[12px] text-white/75" aria-hidden="true" />
+                <span className="mt-0.5 text-[8px] font-semibold uppercase leading-tight tracking-[0.08em]">Outside</span>
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -613,137 +495,150 @@ export function TourViewer({
       <div className="pointer-events-auto absolute bottom-3 left-3 z-40 flex flex-wrap items-center gap-2">
         <div className="tour-pill">
           <ModeButton
+            icon="fa-house"
+            label="Whole house"
+            active={provider === 'engine' && state.mode === 'overview'}
+            onClick={() => {
+              setProvider('engine');
+              setMode('overview');
+            }}
+          />
+          <ModeButton
             icon="fa-person-walking"
             label="Walk"
-            active={mode === 'walk'}
-            onClick={() => setMode('walk')}
+            active={provider === 'engine' && state.mode === 'walk'}
+            onClick={() => {
+              setProvider('engine');
+              setMode('walk');
+            }}
           />
           <ModeButton
             icon="fa-cube"
-            label="3D dollhouse"
-            active={mode === 'dollhouse'}
-            onClick={openDollhouse}
+            label="Dollhouse"
+            active={provider === 'engine' && state.mode === 'dollhouse'}
+            onClick={() => {
+              setProvider('engine');
+              setMode('dollhouse');
+            }}
           />
           <ModeButton
             icon="fa-table-cells-large"
             label="Floor plan"
-            active={mode === 'floorplan'}
-            onClick={() => setMode(mode === 'floorplan' ? 'walk' : 'floorplan')}
+            active={provider === 'engine' && state.mode === 'floorplan'}
+            onClick={() => {
+              setProvider('engine');
+              setMode('floorplan');
+            }}
           />
           <ModeButton
-            icon={route?.kind === 'guided' ? 'fa-pause' : 'fa-play'}
-            label={route?.kind === 'guided' ? 'Stop guided tour' : 'Guided tour'}
-            active={route?.kind === 'guided'}
+            icon={state.guided ? 'fa-stop' : 'fa-play'}
+            label={state.guided ? 'Stop guided tour' : 'Guided tour'}
+            active={state.guided}
             onClick={toggleGuided}
           />
-          <ModeButton icon="fa-ruler" label="Measure" active={measuring} onClick={toggleMeasure} />
+          {provider === 'engine' && state.mode === 'walk' && (
+            <ModeButton icon="fa-ruler" label="Measure" active={measuring} onClick={toggleMeasure} />
+          )}
           {hasMatterport && (
             <ModeButton
               icon="fa-vr-cardboard"
               label="Matterport"
-              active={mode === 'matterport'}
-              onClick={() => setMode(mode === 'matterport' ? 'walk' : 'matterport')}
+              active={provider === 'matterport'}
+              onClick={() => setProvider(provider === 'matterport' ? 'engine' : 'matterport')}
             />
           )}
           <ModeButton
             icon="fa-street-view"
             label="Street View"
-            active={mode === 'streetview'}
-            onClick={() => setMode(mode === 'streetview' ? 'walk' : 'streetview')}
+            active={provider === 'streetview'}
+            onClick={() => setProvider(provider === 'streetview' ? 'engine' : 'streetview')}
           />
         </div>
 
-        {measuring && (
-          <div className="tour-glass flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px]">
-            <span className="text-white/70">
-              {measurePoints.length < 2 ? 'Tap two floor points' : distanceLabel}
-            </span>
-            <button
-              type="button"
-              className="font-semibold text-gold-500"
-              onClick={() => setUnits(units === 'ft' ? 'm' : 'ft')}
-            >
-              {units === 'ft' ? 'ft' : 'm'}
-            </button>
-            <button
-              type="button"
-              className="text-white/60 hover:text-white"
-              onClick={() => engineRef.current?.clearMeasurement()}
-            >
-              Clear
-            </button>
+        {provider === 'engine' && cutaway && tour.floors.length > 1 && (
+          <div className="tour-pill text-[10px] font-semibold uppercase tracking-wider">
+            {state.mode === 'dollhouse' && (
+              <LevelButton active={state.level === 'all'} onClick={() => engineRef.current?.setLevel('all')}>
+                All
+              </LevelButton>
+            )}
+            {tour.floors.map((floor) => (
+              <LevelButton
+                key={floor.level}
+                active={state.level === floor.level}
+                onClick={() => engineRef.current?.setLevel(floor.level)}
+              >
+                {floor.name}
+              </LevelButton>
+            ))}
           </div>
         )}
+
+        {measuring && <MeasureReadout store={measureStore} units={units} onUnits={() => setUnits(units === 'ft' ? 'm' : 'ft')} onClear={() => engineRef.current?.clearMeasurement()} />}
       </div>
 
       {/* ------------------------------------------------ right controls -- */}
       <div className="pointer-events-auto absolute bottom-3 right-3 z-40 flex items-center gap-2">
-        {!embedded && (
-          <div className="tour-pill">
-            <button
-              type="button"
-              className="tour-btn"
-              onClick={() => {
-                setCoach(false);
-                engineRef.current?.step(1);
-              }}
-              title="Step forward (W / ↑)"
-            >
-              <i className="fa-solid fa-circle-arrow-up" aria-hidden="true" />
-              <span className="sr-only">Step forward through the doorway ahead</span>
+        {/* Touch screens walk by tapping the floor and look by swiping, so the
+            arrow pad, zoom and keyboard buttons only appear from `sm` up. */}
+        {provider === 'engine' && state.mode === 'walk' && (
+          <div className="tour-pill hidden sm:flex" role="group" aria-label="Walk controls">
+            <button type="button" className="tour-btn" onClick={() => engineRef.current?.turn(-45)} title="Turn left (←)">
+              <i className="fa-solid fa-rotate-left" aria-hidden="true" />
+              <span className="sr-only">Turn left</span>
             </button>
-            <button
-              type="button"
-              className={`tour-btn ${autoRotate ? 'tour-btn-active' : ''}`}
-              onClick={toggleAutoRotate}
-              title="Auto-rotate"
-            >
-              <i className="fa-solid fa-arrows-rotate" aria-hidden="true" />
-              <span className="sr-only">Toggle auto-rotate</span>
+            <button type="button" className="tour-btn" onClick={() => engineRef.current?.step(1)} title="Step forward (↑)">
+              <i className="fa-solid fa-arrow-up" aria-hidden="true" />
+              <span className="sr-only">Step forward</span>
             </button>
-            <button
-              type="button"
-              className="tour-btn hidden sm:flex"
-              onClick={() => engineRef.current?.zoomBy(-8)}
-              title="Zoom in"
-            >
-              <i className="fa-solid fa-magnifying-glass-plus" aria-hidden="true" />
-              <span className="sr-only">Zoom in</span>
+            <button type="button" className="tour-btn" onClick={() => engineRef.current?.step(-1)} title="Step back (↓)">
+              <i className="fa-solid fa-arrow-down" aria-hidden="true" />
+              <span className="sr-only">Step back</span>
             </button>
-            <button
-              type="button"
-              className="tour-btn hidden sm:flex"
-              onClick={() => engineRef.current?.zoomBy(8)}
-              title="Zoom out"
-            >
-              <i className="fa-solid fa-magnifying-glass-minus" aria-hidden="true" />
-              <span className="sr-only">Zoom out</span>
-            </button>
-            <button
-              type="button"
-              className={`tour-btn sm:hidden ${gyro ? 'tour-btn-active' : ''}`}
-              onClick={toggleGyro}
-              title="Move your phone to look around"
-            >
-              <i className="fa-solid fa-mobile-screen" aria-hidden="true" />
-              <span className="sr-only">Toggle motion controls</span>
-            </button>
-            <button
-              type="button"
-              className="tour-btn"
-              onClick={() => setShowHelp((open) => !open)}
-              title="Keyboard shortcuts"
-            >
-              <i className="fa-solid fa-keyboard" aria-hidden="true" />
-              <span className="sr-only">Keyboard shortcuts</span>
+            <button type="button" className="tour-btn" onClick={() => engineRef.current?.turn(45)} title="Turn right (→)">
+              <i className="fa-solid fa-rotate-right" aria-hidden="true" />
+              <span className="sr-only">Turn right</span>
             </button>
           </div>
         )}
+        <div className="tour-pill">
+          <button
+            type="button"
+            className={`tour-btn ${autoRotate ? 'tour-btn-active' : ''}`}
+            onClick={toggleAutoRotate}
+            title="Auto-rotate"
+            aria-pressed={autoRotate}
+          >
+            <i className="fa-solid fa-arrows-rotate" aria-hidden="true" />
+            <span className="sr-only">Toggle auto-rotate</span>
+          </button>
+          <button type="button" className="tour-btn hidden sm:flex" onClick={() => engineRef.current?.zoomBy(-8)} title="Zoom in">
+            <i className="fa-solid fa-magnifying-glass-plus" aria-hidden="true" />
+            <span className="sr-only">Zoom in</span>
+          </button>
+          <button type="button" className="tour-btn hidden sm:flex" onClick={() => engineRef.current?.zoomBy(8)} title="Zoom out">
+            <i className="fa-solid fa-magnifying-glass-minus" aria-hidden="true" />
+            <span className="sr-only">Zoom out</span>
+          </button>
+          <button
+            type="button"
+            className={`tour-btn sm:hidden ${gyro ? 'tour-btn-active' : ''}`}
+            onClick={toggleGyro}
+            title="Move your phone to look around"
+          >
+            <i className="fa-solid fa-mobile-screen" aria-hidden="true" />
+            <span className="sr-only">Toggle motion controls</span>
+          </button>
+          <button type="button" className="tour-btn hidden sm:flex" onClick={() => setShowHelp((open) => !open)} title="Keyboard shortcuts">
+            <i className="fa-solid fa-keyboard" aria-hidden="true" />
+            <span className="sr-only">Keyboard shortcuts</span>
+          </button>
+        </div>
 
         {!immersive && (
           <Link
             href={`/property/${property.slug}/tour`}
-            className="tour-glass flex items-center gap-2 rounded-full px-3 py-2 text-[11px] font-semibold uppercase tracking-wider transition-colors hover:bg-white hover:text-ink-900"
+            className="tour-glass hidden items-center gap-2 rounded-full px-3 py-2 text-[11px] font-semibold uppercase tracking-wider transition-colors hover:bg-white hover:text-ink-900 md:flex"
           >
             <i className="fa-solid fa-up-right-and-down-left-from-center" aria-hidden="true" />
             Immersive
@@ -751,110 +646,49 @@ export function TourViewer({
         )}
       </div>
 
-      {/* ------------------------------------------------------- overlays -- */}
-      {mode === 'floorplan' && (
-        <div className="absolute inset-0 z-30 flex animate-fade-in items-center justify-center bg-ink-950/94 p-6 pb-20 backdrop-blur-sm">
-          <FloorPlan
-            tour={tour}
-            activeNodeId={node.id}
-            visited={visited}
-            variant="plan"
-            route={route?.path}
-            leg={leg}
-            onSelect={walkTo}
-            onClose={() => setMode('walk')}
-          />
+      {/* ------------------------------------------------------- minimap -- */}
+      {provider === 'engine' && state.mode === 'walk' && immersive && (
+        <div className="pointer-events-auto absolute right-3 top-16 z-20 hidden w-[210px] lg:block">
+          <div className="rounded-xs border border-white/12 bg-ink-950/75 p-2 backdrop-blur-md">
+            <div className="mb-1.5 flex items-center justify-between text-[9px] font-semibold uppercase tracking-[0.14em] text-white/60">
+              <span>{levelName}</span>
+              <span>
+                {visitedRooms}/{rooms.length} rooms
+              </span>
+            </div>
+            <div className="aspect-[4/3]">
+              <LiveFloorPlan
+                tour={tour}
+                store={poseStore}
+                level={state.floor}
+                activeSpace={state.space}
+                visited={visited}
+                onSelect={walkTo}
+              />
+            </div>
+          </div>
         </div>
       )}
 
-      {mode === 'dollhouse' && (
-        <div
-          className={[
-            'absolute inset-0 z-30 bg-ink-950 transition-opacity duration-300',
-            overlayLeaving ? 'opacity-0' : 'animate-fade-in opacity-100',
-          ].join(' ')}
-        >
-          <Dollhouse
-            tour={tour}
-            activeNodeId={node.id}
-            visited={visited}
-            entryYaw={dollhouseYaw}
-            reducedMotion={reducedMotion}
-            controllerRef={dollhouseRef}
-            onSelect={enterFromDollhouse}
-            onClose={() => setMode('walk')}
-          />
-        </div>
-      )}
-
-      {/* The docked minimap only earns its space in the full-viewport layout;
-          inside the detail-page panel it would crowd the filmstrip, so there the
-          floor-plan button is the way in. */}
-      {mode === 'walk' && immersive && (
-        <div className="pointer-events-auto absolute right-3 top-16 z-20 hidden w-[200px] lg:block">
-          <FloorPlan
-            tour={tour}
-            activeNodeId={node.id}
-            visited={visited}
-            variant="mini"
-            route={route?.path}
-            leg={leg}
-            onSelect={walkTo}
-          />
-          <p className="mt-1.5 text-right text-[10px] uppercase tracking-[0.14em] text-white/55">
-            {visited.length}/{tour.nodes.length} rooms visited
-          </p>
-        </div>
-      )}
-
-      {/* ------------------------------------------------- room filmstrip -- */}
-      {/* The strip spans the full width, so the wrapper must not swallow clicks
-          aimed at the panorama behind it — only the thumbnails are interactive. */}
-      {!embedded && mode !== 'dollhouse' && (
-        <div
-          className={[
-            'pointer-events-none absolute inset-x-0 z-10 overflow-x-auto px-3 no-scrollbar',
-            immersive ? 'bottom-16' : 'bottom-14',
-          ].join(' ')}
-        >
-          <div className="pointer-events-auto mx-auto flex w-max gap-2">
-            {tour.nodes.map((candidate, index) => {
-              const isActive = candidate.id === node.id;
-              const isNeighbour = neighbours.has(candidate.id);
-              const onRoute = Boolean(route?.path.includes(candidate.id)) && !isActive;
-              return (
-                <button
-                  key={candidate.id}
-                  type="button"
-                  onClick={() => walkTo(candidate.id)}
-                  className={[
-                    'group relative shrink-0 overflow-hidden rounded-sm border transition-all',
-                    immersive ? 'h-12 w-20' : 'h-10 w-16',
-                    isActive
-                      ? 'border-gold-500 ring-1 ring-gold-500'
-                      : onRoute
-                        ? 'border-gold-300/80'
-                        : isNeighbour
-                          ? 'border-white/60'
-                          : 'border-white/20 opacity-70 hover:opacity-100',
-                  ].join(' ')}
-                  title={`${index + 1}. ${candidate.name}${isActive ? '' : ' — walk there'}`}
-                >
-                  <img
-                    src={`/panoramas/${candidate.pano}-preview.jpg`}
-                    alt=""
-                    loading="lazy"
-                    className="h-full w-full object-cover"
-                  />
-                  <span className="absolute left-0.5 top-0.5 rounded-sm bg-black/60 px-1 font-mono text-[8px] leading-tight text-white/80">
-                    {index + 1}
-                  </span>
-                  <span className="absolute inset-x-0 bottom-0 truncate bg-black/70 px-1 py-0.5 text-[8.5px] font-semibold uppercase tracking-[0.1em]">
-                    {candidate.name}
-                  </span>
-                </button>
-              );
-            })}
+      {provider === 'engine' && state.mode === 'floorplan' && !state.flying && immersive && (
+        <div className="pointer-events-auto absolute right-3 top-16 z-20 hidden w-[260px] lg:block">
+          <div className="rounded-xs border border-white/12 bg-ink-950/80 p-3 backdrop-blur-md">
+            <p className="eyebrow text-[9px] text-gold-400">Plan</p>
+            <p className="mb-2 mt-0.5 text-[11px] text-white/60">
+              {tour.nodes.filter((n) => n.floor === (typeof state.level === 'number' ? state.level : 1) && n.pano).length} photographed spaces ·{' '}
+              {tour.floors.reduce((sum, f) => sum + f.area, 0).toLocaleString('en-US')} sqft
+            </p>
+            <div className="aspect-[4/3]">
+              <FloorPlan
+                tour={tour}
+                level={typeof state.level === 'number' ? state.level : 1}
+                activeSpace={state.space}
+                visited={visited}
+                variant="panel"
+                onSelect={walkTo}
+              />
+            </div>
+            <p className="mt-2 text-[10.5px] text-white/50">Choose a room to walk there step by step.</p>
           </div>
         </div>
       )}
@@ -862,36 +696,28 @@ export function TourViewer({
       {/* ------------------------------------------------------ help card -- */}
       {showHelp && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-ink-950/88 p-6 backdrop-blur-sm">
-          <div className="max-h-full w-full max-w-md overflow-y-auto rounded-xs border border-white/12 bg-ink-950 p-6">
+          <div className="w-full max-w-md rounded-xs border border-white/12 bg-ink-950 p-6">
             <div className="flex items-start justify-between">
               <h3 className="font-serif-title text-lg">Getting around</h3>
-              <button
-                type="button"
-                className="tour-btn"
-                onClick={() => setShowHelp(false)}
-                aria-label="Close"
-              >
+              <button type="button" className="tour-btn" onClick={() => setShowHelp(false)} aria-label="Close">
                 <i className="fa-solid fa-xmark" aria-hidden="true" />
               </button>
             </div>
             <dl className="mt-4 space-y-2 text-[12px] text-ink-200">
               {[
-                ['Click the floor', 'Walk through the doorway on that side'],
-                ['W / ↑ (hold)', 'Walk forward, room after room'],
-                ['S / ↓', 'Step back'],
-                ['A D / ← →', 'Turn'],
-                ['R F / PgUp PgDn', 'Look up and down'],
+                ['Click the floor', 'Walk to that spot, one step at a time'],
+                ['Click a doorway label', 'Walk through into the next room'],
+                ['↑ / W', 'Step forward (hold to keep walking)'],
+                ['↓ / S', 'Step back'],
+                ['← → / A D', 'Turn'],
                 ['Drag / swipe', 'Look around'],
-                ['Scroll / pinch / + −', 'Zoom'],
-                ['1 – 9', 'Walk to that room, door by door'],
-                ['G', 'Start or stop the guided tour'],
-                ['Esc', 'Stop walking, close overlays'],
+                ['Scroll / pinch', 'Zoom'],
+                ['1 – 9', 'Walk to a room'],
+                ['Esc', 'Stop at the next step'],
                 ['?', 'Open or close this card'],
               ].map(([key, meaning]) => (
                 <div key={key} className="flex items-center justify-between gap-6">
-                  <dt className="shrink-0 rounded border border-white/20 px-2 py-0.5 font-mono text-[11px]">
-                    {key}
-                  </dt>
+                  <dt className="rounded border border-white/20 px-2 py-0.5 font-mono text-[11px]">{key}</dt>
                   <dd className="flex-1 text-right text-white/70">{meaning}</dd>
                 </div>
               ))}
@@ -900,6 +726,224 @@ export function TourViewer({
         </div>
       )}
     </div>
+  );
+}
+
+// ------------------------------------------------------------- overlays ---
+
+function OverlayLayer({
+  store,
+  activeInfo,
+  onInfo,
+  onWalk,
+  onEntrance,
+}: {
+  store: Store<OverlayItem[]>;
+  activeInfo: string | null;
+  onInfo: (key: string | null) => void;
+  onWalk: (space: string) => void;
+  onEntrance: () => void;
+}) {
+  const items = useStore(store);
+  return (
+    <div className="pointer-events-none absolute inset-0 z-10">
+      {items.map((item) => {
+        if (item.kind === 'door') {
+          return (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => onWalk(item.target)}
+              className="group pointer-events-auto absolute flex items-center gap-2 rounded-full border border-white/35 bg-ink-950/60 py-1 pl-1 pr-3 text-left shadow-lg backdrop-blur-md transition-colors hover:border-white hover:bg-ink-950/80 focus-visible:border-gold-400"
+              style={{
+                left: item.x,
+                top: item.y,
+                transform: `translate(-50%, -50%) scale(${item.scale})`,
+              }}
+            >
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-ink-900 transition-transform group-hover:scale-110">
+                <i
+                  className={`fa-solid ${item.hint === 'Upstairs' ? 'fa-arrow-up' : item.hint === 'Downstairs' ? 'fa-arrow-down' : 'fa-person-walking'} text-[12px]`}
+                  aria-hidden="true"
+                />
+              </span>
+              <span className="leading-tight">
+                <span className="block text-[8.5px] font-semibold uppercase tracking-[0.14em] text-gold-300">
+                  {item.hint}
+                </span>
+                <span className="block whitespace-nowrap text-[11.5px] font-medium">{item.label}</span>
+              </span>
+            </button>
+          );
+        }
+        if (item.kind === 'info') {
+          const open = activeInfo === item.key;
+          return (
+            <div
+              key={item.key}
+              className="pointer-events-auto absolute"
+              style={{ left: item.x, top: item.y, transform: `translate(-50%, -50%) scale(${item.scale})` }}
+            >
+              <button
+                type="button"
+                onClick={() => onInfo(open ? null : item.key)}
+                className="flex h-7 w-7 items-center justify-center rounded-full border border-white/80 bg-ink-900/85 text-[11px] font-bold text-white shadow-lg backdrop-blur-sm transition-transform hover:scale-110"
+                aria-expanded={open}
+              >
+                i<span className="sr-only">{item.label}</span>
+              </button>
+              {open && (
+                <div className="absolute left-1/2 top-9 z-20 w-60 -translate-x-1/2 animate-fade-up rounded-xs border border-white/12 bg-black/85 p-3 text-left backdrop-blur-md">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-gold-500">{item.label}</p>
+                  <p className="mt-1 text-[11px] leading-relaxed text-ink-100">{item.body}</p>
+                </div>
+              )}
+            </div>
+          );
+        }
+        if (item.kind === 'room') {
+          return (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => onWalk(item.target)}
+              className={[
+                'pointer-events-auto absolute whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] shadow-lg backdrop-blur-md transition-colors',
+                item.active
+                  ? 'border-gold-500 bg-gold-500 text-ink-900'
+                  : 'border-white/30 bg-ink-950/65 text-white hover:border-white hover:bg-ink-950/85',
+              ].join(' ')}
+              style={{ left: item.x, top: item.y, transform: 'translate(-50%, -50%)' }}
+            >
+              {item.label}
+            </button>
+          );
+        }
+        return (
+          <button
+            key={item.key}
+            type="button"
+            onClick={onEntrance}
+            className="group pointer-events-auto absolute flex flex-col items-center"
+            style={{ left: item.x, top: item.y, transform: 'translate(-50%, -100%)' }}
+          >
+            <span className="flex items-center gap-2 rounded-full bg-gold-500 px-3.5 py-1.5 text-[10.5px] font-bold uppercase tracking-wider text-ink-900 shadow-pill transition-transform group-hover:-translate-y-0.5">
+              <i className="fa-solid fa-person-walking" aria-hidden="true" />
+              Walk in
+            </span>
+            <span className="h-5 w-px bg-gold-500" />
+            <span className="relative flex h-3 w-3 items-center justify-center">
+              <span className="absolute inset-0 animate-hotspot-pulse rounded-full bg-gold-400" />
+              <span className="relative h-2 w-2 rounded-full bg-gold-500" />
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function MeasureLayer({ store, units }: { store: Store<Measure>; units: 'm' | 'ft' }) {
+  const { points, metres } = useStore(store);
+  if (!points.length) return null;
+  const label = metres == null ? null : units === 'ft' ? `${(metres * 3.28084).toFixed(1)} ft` : `${metres.toFixed(2)} m`;
+  return (
+    <div className="pointer-events-none absolute inset-0 z-10">
+      <svg className="absolute inset-0 h-full w-full" aria-hidden="true">
+        {points.length === 2 && (
+          <line
+            x1={points[0].x}
+            y1={points[0].y}
+            x2={points[1].x}
+            y2={points[1].y}
+            stroke="#c5a869"
+            strokeWidth={2}
+            strokeDasharray="6 4"
+          />
+        )}
+        {points.map((point, index) => (
+          <circle key={index} cx={point.x} cy={point.y} r={5} fill="#c5a869" stroke="#fff" strokeWidth={1.5} />
+        ))}
+      </svg>
+      {label && points.length === 2 && (
+        <div
+          className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full bg-gold-500 px-2.5 py-1 text-[11px] font-bold text-ink-900 shadow-lg"
+          style={{ left: (points[0].x + points[1].x) / 2, top: (points[0].y + points[1].y) / 2 }}
+        >
+          {label}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MeasureReadout({
+  store,
+  units,
+  onUnits,
+  onClear,
+}: {
+  store: Store<Measure>;
+  units: 'm' | 'ft';
+  onUnits: () => void;
+  onClear: () => void;
+}) {
+  const { points, metres } = useStore(store);
+  const label = metres == null ? null : units === 'ft' ? `${(metres * 3.28084).toFixed(1)} ft` : `${metres.toFixed(2)} m`;
+  return (
+    <div className="tour-glass flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px]">
+      <span className="text-white/70">{points.length < 2 || !label ? 'Tap two points on a wall or floor' : label}</span>
+      <button type="button" className="font-semibold text-gold-500" onClick={onUnits}>
+        {units}
+      </button>
+      <button type="button" className="text-white/60 hover:text-white" onClick={onClear}>
+        Clear
+      </button>
+    </div>
+  );
+}
+
+function Compass({ store }: { store: Store<EnginePose | null> }) {
+  const pose = useStore(store);
+  const heading = pose ? ((pose.yaw % 360) + 360) % 360 : 0;
+  return (
+    <div className="tour-glass hidden h-9 w-9 items-center justify-center rounded-full sm:flex" title={`Facing ${Math.round(heading)}°`}>
+      <i
+        className="fa-solid fa-location-arrow text-[12px] text-gold-500"
+        style={{ transform: `rotate(${heading - 45}deg)` }}
+        aria-hidden="true"
+      />
+      <span className="sr-only">Compass heading {Math.round(heading)} degrees</span>
+    </div>
+  );
+}
+
+function LiveFloorPlan({
+  tour,
+  store,
+  level,
+  activeSpace,
+  visited,
+  onSelect,
+}: {
+  tour: PropertyTour;
+  store: Store<EnginePose | null>;
+  level: number;
+  activeSpace: string;
+  visited: string[];
+  onSelect: (space: string) => void;
+}) {
+  const pose = useStore(store);
+  return (
+    <FloorPlan
+      tour={tour}
+      level={level}
+      pose={pose}
+      activeSpace={activeSpace}
+      visited={visited}
+      variant="mini"
+      onSelect={onSelect}
+    />
   );
 }
 
@@ -928,35 +972,26 @@ function ModeButton({
   );
 }
 
-function CoachTip({ icon, text }: { icon: string; text: string }) {
+function LevelButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
   return (
-    <li className="flex items-start gap-3">
-      <i className={`fa-solid ${icon} mt-0.5 w-4 shrink-0 text-center text-gold-400`} aria-hidden="true" />
-      <span>{text}</span>
-    </li>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={[
+        'rounded-full px-2.5 py-1 transition-colors',
+        active ? 'bg-white text-ink-900' : 'text-white/70 hover:text-white',
+      ].join(' ')}
+    >
+      {children}
+    </button>
   );
-}
-
-/** Rooms seen so far on a guided tour, counting each room once. */
-function routeSummary(route: RouteState | null) {
-  if (!route) return { seen: 0, total: 0 };
-  const total = new Set(route.path).size;
-  const seen = new Set(route.path.slice(0, route.index + 1)).size;
-  return { seen, total };
-}
-
-function clampNumber(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function usePrefersReducedMotion() {
-  const [reduced, setReduced] = useState(false);
-  useEffect(() => {
-    const query = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const update = () => setReduced(query.matches);
-    update();
-    query.addEventListener('change', update);
-    return () => query.removeEventListener('change', update);
-  }, []);
-  return reduced;
 }

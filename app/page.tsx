@@ -12,7 +12,12 @@ import { agents } from '@/lib/data/agents';
 import { destinations } from '@/lib/data/destinations';
 import { pressReleases } from '@/lib/data/press';
 import { blogPosts } from '@/lib/data/editorial';
-import { territoryGroups, worldwideIntro, explorationCards } from '@/lib/data/worldwide';
+import {
+  territoryGroups,
+  worldwideIntro,
+  explorationCards,
+  type TerritoryGroup,
+} from '@/lib/data/worldwide';
 import { getTour } from '@/lib/data/tours';
 import { heroSlides } from '@/lib/data/hero';
 
@@ -220,7 +225,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Worldwide Luxury */}
+        {/* Nepal & India directory */}
         <section
           className="relative border-b border-t border-gray-200 bg-slate-50 py-10"
           data-purpose="worldwide-directory"
@@ -232,22 +237,17 @@ export default function HomePage() {
           <div className="relative z-10 mx-auto max-w-page px-4 md:px-8">
             <div className="mb-6">
               <h2 className="mb-2 font-serif-title text-xl font-medium text-slate-900 md:text-2xl">
-                Worldwide Luxury
+                Nepal &amp; India
               </h2>
               <p className="max-w-5xl text-xs leading-relaxed text-slate-600">{worldwideIntro}</p>
             </div>
 
             <div className="grid gap-6 lg:grid-cols-3">
               {/*
-                The regions were hand-packed into four columns, and the packing
-                could not hold: Europe alone is longer than the three short
-                regions stacked beside it, so every other column stopped a
-                hundred-odd pixels short and the band trailed off into blank
-                paper. A balanced multi-column flow measures the regions itself
-                and closes all four columns at the same line; a region never
-                splits across a column break.
+                A balanced multi-column flow closes the columns at the same line;
+                a country never splits across a column break.
               */}
-              <div className="columns-2 gap-6 text-xs text-slate-700 sm:columns-3 lg:col-span-2 lg:columns-4">
+              <div className="columns-2 gap-6 text-xs text-slate-700 lg:col-span-2">
                 {territoryGroups.map((group) => (
                   <div key={group.region} className="mb-5 break-inside-avoid last:mb-0">
                     <TerritoryList group={group} />
@@ -264,7 +264,13 @@ export default function HomePage() {
                 {explorationCards.map((card, index) => (
                   <Link
                     key={card.title}
-                    href={index === 1 ? '/destinations' : index === 2 ? '/destinations' : '/homes-for-sale'}
+                    href={
+                      index === 1
+                        ? '/destinations'
+                        : index === 2
+                          ? '/homes-for-sale?tag=Historic'
+                          : '/homes-for-sale'
+                    }
                     className="group flex flex-col overflow-hidden rounded border border-gray-200 bg-white transition-colors hover:border-slate-400"
                   >
                     <div className="relative min-h-[112px] flex-1 overflow-hidden">
@@ -293,27 +299,24 @@ export default function HomePage() {
   );
 }
 
-function TerritoryList({
-  group,
-}: {
-  group: { region: string; countries: { flag: string; name: string }[] };
-}) {
+function TerritoryList({ group }: { group: TerritoryGroup }) {
   return (
     <>
-      <h4 className="mb-2 border-b border-gray-200 pb-1 font-bold text-slate-900">
-        {group.region}
+      <h4 className="mb-2 flex items-center gap-1.5 border-b border-gray-200 pb-1 font-bold text-slate-900">
+        <span aria-hidden="true">{group.flag}</span> {group.region}
       </h4>
       <ul className="space-y-1.5 text-[11px]">
-        {group.countries.map((country) => (
-          <li key={`${group.region}-${country.name}`}>
-            <Link
-              href={`/homes-for-sale?country=${encodeURIComponent(country.name)}`}
-              className="flex items-center gap-1.5 hover:text-blue-600"
-            >
-              <span aria-hidden="true">{country.flag}</span> {country.name}
-            </Link>
-          </li>
-        ))}
+        {group.places.map((place) => {
+          const search = new URLSearchParams({ country: place.country });
+          if (place.region) search.set('region', place.region);
+          return (
+            <li key={`${group.region}-${place.name}`}>
+              <Link href={`/homes-for-sale?${search.toString()}`} className="hover:text-blue-600">
+                {place.name}
+              </Link>
+            </li>
+          );
+        })}
       </ul>
     </>
   );
