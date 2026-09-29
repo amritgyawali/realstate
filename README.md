@@ -308,3 +308,9 @@ plain `next dev` / `next build` / `next start`.
 - Icons: Font Awesome Free 6
 #   r e a l s t a t e  
  
+## Deploying to Vercel
+
+1. Push the repo to GitHub, then in Vercel choose **Add New → Project** and import it.
+2. Framework preset is detected as Next.js; `vercel.json` already sets install/build commands and caching headers. Leave the root directory as `/`.
+3. (Optional) add environment variables from `.env.example` — `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_MATTERPORT_MODEL_ID`, `NEXT_PUBLIC_GOOGLE_MAPS_KEY`. None are required.
+4. Click **Deploy**. Or from the CLI: `npx vercel` (preview) / `npx vercel --prod`.
